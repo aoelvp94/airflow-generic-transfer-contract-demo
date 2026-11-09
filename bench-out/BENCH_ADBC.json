@@ -1,0 +1,64 @@
+{
+  "timestamp_utc": "2026-11-09T22:59:49.549476+00:00",
+  "rows": 1000000,
+  "batch_size": 50000,
+  "rounds": 3,
+  "batch_format_source": "record_batch",
+  "batch_format_sink": "record_batch",
+  "results": [
+    {
+      "name": "arrow_adbc_e2e",
+      "median_s": 0.5748741419999988,
+      "samples_s": [
+        0.6366497770000024,
+        0.5733749009999656,
+        0.5748741419999988
+      ],
+      "peak_mb_median": 0.24001121520996094,
+      "last": {
+        "table": "dst",
+        "records": 1000000,
+        "batches": 977,
+        "mode": "create"
+      }
+    },
+    {
+      "name": "arrow_to_rows_then_sink",
+      "median_s": 2.9117838739999797,
+      "samples_s": [
+        3.4669192679999696,
+        2.9117838739999797,
+        2.8697261199999957
+      ],
+      "peak_mb_median": 244.92062759399414,
+      "last": {
+        "records": 1000000
+      }
+    },
+    {
+      "name": "pure_rows_200000",
+      "median_s": 0.004445051999994121,
+      "samples_s": [
+        0.00823742500000435,
+        0.004445051999994121,
+        0.003903376000039316
+      ],
+      "peak_mb_median": 2.2904090881347656,
+      "last": {
+        "records": 200000
+      }
+    }
+  ],
+  "fit": {
+    "works": [
+      "Protocols accept Any batches; isinstance checks are structural.",
+      "AdbcSqliteSource.batch_format == 'record_batch'.",
+      "GenericRecordTransfer streams RecordBatch end-to-end without knowing Arrow."
+    ],
+    "decisions_needed": [
+      "batch type negotiation when source is Arrow and sink wants rows (or vice versa).",
+      "schema handling / cast policy at the operator vs hook boundary.",
+      "whether FileCopyable and BatchReadable share one operator or stay split."
+    ]
+  }
+}
