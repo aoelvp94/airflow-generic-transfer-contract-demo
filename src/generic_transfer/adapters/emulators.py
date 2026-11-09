@@ -258,6 +258,48 @@ def clear_prefix(emu: EmulatorFS, prefix: str) -> None:
             container.delete_blob(blob.name)
 
 
+_client_cache: dict[str, Any] = {}
+
+
+def _native_client(emu: EmulatorFS):
+    """Reuse native SDK clients per flavour+endpoint (seed/bench hot path)."""
+    if emu.flavour == "s3":
+        key = f"s3:{emu.storage_options['client_kwargs']['endpoint_url']}"
+        if key not in _client_cache:
+            import boto3
+            from botocore.client import Config
+
+            opts = emu.storage_options
+            _client_cache[key] = boto3.client(
+                "s3",
+                endpoint_url=opts["client_kwargs"]["endpoint_url"],
+                aws_access_key_id=opts["key"],
+                aws_secret_access_key=opts["secret"],
+                region_name=opts["client_kwargs"].get("region_name", "us-east-1"),
+                config=Config(s3={"addressing_style": "path"}),
+            )
+        return _client_cache[key]
+    if emu.flavour == "gcs":
+        key = f"gcs:{os.environ.get('STORAGE_EMULATOR_HOST', '')}"
+        if key not in _client_cache:
+            from google.cloud import storage as gcs_storage
+
+            _client_cache[key] = gcs_storage.Client(
+                project=os.environ.get("GCS_PROJECT", "demo")
+            )
+        return _client_cache[key]
+    if emu.flavour == "azure":
+        key = f"azure:{emu.storage_options.get('connection_string', '')[:40]}"
+        if key not in _client_cache:
+            from azure.storage.blob import BlobServiceClient
+
+            _client_cache[key] = BlobServiceClient.from_connection_string(
+                emu.storage_options["connection_string"]
+            )
+        return _client_cache[key]
+    raise ValueError(emu.flavour)
+
+
 def put_bytes(emu: EmulatorFS, key: str, data: bytes) -> str:
     """Write ``data`` to ``bucket/key`` via the **native SDK**.
 
@@ -266,31 +308,12 @@ def put_bytes(emu: EmulatorFS, key: str, data: bytes) -> str:
     layout the four Airflow pair-operator PRs had to special-case.
     """
     key = key.lstrip("/")
+    client = _native_client(emu)
     if emu.flavour == "s3":
-        import boto3
-        from botocore.client import Config
-
-        opts = emu.storage_options
-        client = boto3.client(
-            "s3",
-            endpoint_url=opts["client_kwargs"]["endpoint_url"],
-            aws_access_key_id=opts["key"],
-            aws_secret_access_key=opts["secret"],
-            region_name=opts["client_kwargs"].get("region_name", "us-east-1"),
-            config=Config(s3={"addressing_style": "path"}),
-        )
         client.put_object(Bucket=emu.bucket, Key=key, Body=data)
     elif emu.flavour == "gcs":
-        from google.cloud import storage as gcs_storage
-
-        client = gcs_storage.Client(project=os.environ.get("GCS_PROJECT", "demo"))
         client.bucket(emu.bucket).blob(key).upload_from_string(data)
     elif emu.flavour == "azure":
-        from azure.storage.blob import BlobServiceClient
-
-        client = BlobServiceClient.from_connection_string(
-            emu.storage_options["connection_string"]
-        )
         client.get_container_client(emu.bucket).upload_blob(
             key, data, overwrite=True
         )
@@ -401,13 +424,23 @@ def seed_many_small(
     marker_every: int = 100,
 ) -> list[str]:
     """Seed ``n`` ~size-byte objects under ``prefix``, with periodic folder markers."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     clear_prefix(emu, prefix)
     put_bytes(emu, f"{prefix}/", b"")
     payload = b"x" * size
-    for i in range(n):
-        if marker_every and i % marker_every == 0:
+    # Markers first (sequential — rare).
+    if marker_every:
+        for i in range(0, n, marker_every):
             put_bytes(emu, f"{prefix}/bucket_{i // marker_every}/", b"")
-        put_bytes(emu, f"{prefix}/bucket_{i // max(marker_every, 1)}/obj_{i:04d}.bin", payload)
+    jobs = [
+        (f"{prefix}/bucket_{i // max(marker_every, 1)}/obj_{i:04d}.bin", payload)
+        for i in range(n)
+    ]
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        futs = [pool.submit(put_bytes, emu, k, d) for k, d in jobs]
+        for f in as_completed(futs):
+            f.result()
     return list_keys_native(emu, prefix)
 
 
