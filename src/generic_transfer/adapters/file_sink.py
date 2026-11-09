@@ -141,18 +141,40 @@ class ObjectStoragePath:
     """Tiny stand-in for ``airflow.io.path.ObjectStoragePath``.
 
     Resolves ``file://``, bare local paths, and any fsspec URL (``memory://``,
-    ``s3://``, …). Enough to show that file destinations go through one path.
+    ``s3://``, ``gs://``, ``abfs://``, …). Pass ``storage_options`` (or a
+    pre-built ``fs``) when pointing at emulators that need endpoint/creds.
     """
 
-    def __init__(self, url: str):
+    def __init__(
+        self,
+        url: str,
+        *,
+        storage_options: dict[str, Any] | None = None,
+        fs: Any | None = None,
+    ):
         self.url = url
+        self._storage_options = dict(storage_options or {})
+        if fs is not None:
+            parsed = urlparse(url)
+            # path inside the fs: strip scheme://authority/
+            if parsed.scheme in ("", "file"):
+                self._path = parsed.path
+            else:
+                # s3://bucket/key -> bucket/key ; abfs://container/key -> container/key
+                self._path = f"{parsed.netloc}/{parsed.path.lstrip('/')}".rstrip("/")
+                if parsed.path in ("", "/"):
+                    self._path = parsed.netloc
+            self._fs = fs
+            return
         parsed = urlparse(url)
+        opts = self._storage_options or None
         if parsed.scheme in ("", "file"):
             self._fs, self._path = fsspec.core.url_to_fs(
-                url if parsed.scheme else f"file://{url}"
+                url if parsed.scheme else f"file://{url}",
+                **(opts or {}),
             )
         else:
-            self._fs, self._path = fsspec.core.url_to_fs(url)
+            self._fs, self._path = fsspec.core.url_to_fs(url, **(opts or {}))
 
     @property
     def fs(self) -> Any:
@@ -165,7 +187,11 @@ class ObjectStoragePath:
     def joinpath(self, *parts: str) -> "ObjectStoragePath":
         base = self.url.rstrip("/")
         joined = "/".join(p.strip("/") for p in parts if p)
-        return ObjectStoragePath(f"{base}/{joined}")
+        return ObjectStoragePath(
+            f"{base}/{joined}",
+            storage_options=self._storage_options,
+            fs=self._fs,
+        )
 
     def write_bytes(self, data: bytes) -> None:
         parent = self._path.rsplit("/", 1)[0] if "/" in self._path else ""
