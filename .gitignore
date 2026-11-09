@@ -11,7 +11,15 @@ build/
 htmlcov/
 .DS_Store
 /tmp/
-/bench-out/
 *.db
 warehouse/
 store/
+bin/
+.node/
+azurite-data/
+s3mock-data/
+.emulator-run/
+bench-out/*
+!bench-out/.gitkeep
+!bench-out/BENCH.md
+!bench-out/latest.json
