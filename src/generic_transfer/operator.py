@@ -31,12 +31,13 @@ def _validate_params(hook: Any, params: dict[str, Any], *, role: str) -> None:
     unknown = [k for k in params if k not in props] if props and additional is False else []
     missing = [k for k in required if k not in params]
     type_errors: list[str] = []
+    # JSON Schema "object" is intentionally *not* restricted to dict here:
+    # hooks pass filesystem handles / EmulatorFS / custom stores as opaque objects.
     type_map = {
         "string": str,
         "integer": int,
         "number": (int, float),
         "boolean": bool,
-        "object": dict,
         "array": list,
     }
     for key, value in params.items():
@@ -44,7 +45,7 @@ def _validate_params(hook: Any, params: dict[str, Any], *, role: str) -> None:
         if not isinstance(spec, dict):
             continue
         expected = spec.get("type")
-        if expected is None:
+        if expected is None or expected == "object":
             continue
         py = type_map.get(expected)
         if py is not None and not isinstance(value, py):

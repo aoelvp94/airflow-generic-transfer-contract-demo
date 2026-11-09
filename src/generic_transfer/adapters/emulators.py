@@ -389,3 +389,50 @@ def seed_tree_with_markers(emu: EmulatorFS, prefix: str = "data") -> list[str]:
     put_bytes(emu, f"{prefix}/nested/", b"")
     put_bytes(emu, f"{prefix}/nested/b.json", b'{"id":2}')
     return list_keys_native(emu, prefix)
+
+
+
+def seed_many_small(
+    emu: EmulatorFS,
+    prefix: str,
+    n: int = 1000,
+    *,
+    size: int = 4096,
+    marker_every: int = 100,
+) -> list[str]:
+    """Seed ``n`` ~size-byte objects under ``prefix``, with periodic folder markers."""
+    clear_prefix(emu, prefix)
+    put_bytes(emu, f"{prefix}/", b"")
+    payload = b"x" * size
+    for i in range(n):
+        if marker_every and i % marker_every == 0:
+            put_bytes(emu, f"{prefix}/bucket_{i // marker_every}/", b"")
+        put_bytes(emu, f"{prefix}/bucket_{i // max(marker_every, 1)}/obj_{i:04d}.bin", payload)
+    return list_keys_native(emu, prefix)
+
+
+def seed_one_large(emu: EmulatorFS, prefix: str, *, size_mb: int = 100) -> str:
+    """Seed a single large object (``size_mb`` MiB). Returns the key."""
+    clear_prefix(emu, prefix)
+    key = f"{prefix}/large.bin"
+    # Build in chunks to avoid a giant intermediate peak beyond the object itself.
+    chunk = b"0123456789abcdef" * (64 * 1024 // 16)  # 64 KiB
+    target = size_mb * 1024 * 1024
+    buf = bytearray()
+    while len(buf) < target:
+        buf.extend(chunk)
+    put_bytes(emu, key, bytes(buf[:target]))
+    return key
+
+
+def seed_mixed_tree(emu: EmulatorFS, prefix: str) -> list[str]:
+    """Mixed tree: markers, unicode, spaces, 0-byte real file, nested."""
+    clear_prefix(emu, prefix)
+    put_bytes(emu, f"{prefix}/", b"")
+    put_bytes(emu, f"{prefix}/a.json", b'{"id":1}')
+    put_bytes(emu, f"{prefix}/hello world.json", b'{"id":2}')
+    put_bytes(emu, f"{prefix}/caf\u00e9.json", b'{"id":3}')
+    put_bytes(emu, f"{prefix}/empty.txt", b"")
+    put_bytes(emu, f"{prefix}/nested/", b"")
+    put_bytes(emu, f"{prefix}/nested/b.json", b'{"id":4}')
+    return list_keys_native(emu, prefix)

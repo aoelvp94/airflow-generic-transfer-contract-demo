@@ -42,14 +42,23 @@ class AdbcSqliteSource:
         with adbc_driver_sqlite.dbapi.connect(self.db_path) as conn:
             with conn.cursor() as cur:
                 cur.execute(sql)
-                reader = cur.fetch_record_batch(size)
-                # fetch_record_batch may return a RecordBatchReader
-                if hasattr(reader, "__iter__"):
-                    for batch in reader:
-                        if batch is not None and batch.num_rows:
-                            yield batch
-                elif reader is not None and getattr(reader, "num_rows", 0):
-                    yield reader
+                # adbc_driver_manager Cursor.fetch_record_batch() takes no
+                # batch-size arg; it returns a RecordBatchReader. Re-chunk
+                # with pyarrow if the caller asked for a smaller size.
+                reader = cur.fetch_record_batch()
+                if reader is None:
+                    return
+                batches = list(reader) if hasattr(reader, "__iter__") else [reader]
+                if not batches:
+                    return
+                table = __import__("pyarrow").Table.from_batches(
+                    [b for b in batches if b is not None and getattr(b, "num_rows", 0)]
+                )
+                if table.num_rows == 0:
+                    return
+                for batch in table.to_batches(max_chunksize=size):
+                    if batch.num_rows:
+                        yield batch
 
 
 class AdbcSqliteSink:
