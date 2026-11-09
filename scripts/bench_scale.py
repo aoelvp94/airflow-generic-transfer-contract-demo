@@ -44,7 +44,9 @@ def main() -> int:
     p.add_argument("--size-mb", type=int, default=100)
     p.add_argument("--small-n", type=int, default=1000)
     p.add_argument("--small-bytes", type=int, default=4096)
-    p.add_argument("--workers", default="4,8,16")
+    p.add_argument("--workers", default="8",
+                   help="comma-separated worker counts for parallel mode "
+                        "(default 8; use 4,8,16 for the full matrix)")
     p.add_argument("--chunk-size", type=int, default=1024 * 1024)
     p.add_argument("--latency-ms", type=float, default=0.0)
     p.add_argument("--latency-demo-ms", type=float, default=25.0,
@@ -60,6 +62,8 @@ def main() -> int:
         args.size_mb = min(args.size_mb, 8)
         args.small_n = min(args.small_n, 100)
         args.rounds = min(args.rounds, 3)
+        if args.workers == "8":
+            args.workers = "4,8,16"
 
     os.environ.setdefault("STORAGE_EMULATOR_HOST", "http://127.0.0.1:14443")
     sys.path.insert(0, str(ROOT / "src"))
@@ -256,36 +260,33 @@ def _bench_pairs(*, scenario, pairs, rounds, seed_fn, src_bucket, dst_bucket,
         prefix = f"scale-{scenario}-{src_fl}-{dst_fl}"
         row = {"pair": f"{src_fl}->{dst_fl}", "modes": {}}
 
-        def seed():
-            src = make_fs(src_fl, bucket=src_bucket[src_fl])
-            seed_fn(src, prefix)
-            return src
+        # Seed source ONCE per pair (re-seeding 1000 keys every round dominated wall time).
+        src = make_fs(src_fl, bucket=src_bucket[src_fl])
+        seed_fn(src, prefix)
 
         # (a) naive
-        def run_naive():
-            src = seed()
-            dst = make_fs(dst_fl, bucket=dst_bucket[dst_fl])
-            clear_prefix(dst, f"naive-{prefix}")
+        def run_naive(_src=src, _dst_fl=dst_fl, _prefix=prefix):
+            dst = make_fs(_dst_fl, bucket=dst_bucket[_dst_fl])
+            clear_prefix(dst, f"naive-{_prefix}")
             return naive_pair_copy(
-                src, dst, source_prefix=prefix, dest_prefix=f"naive-{prefix}",
+                _src, dst, source_prefix=_prefix, dest_prefix=f"naive-{_prefix}",
                 skip_markers=False,
             )
 
         row["modes"]["naive_sequential"] = _timed(run_naive, rounds)
 
         # (b) generic sequential
-        def run_generic_seq():
-            src = seed()
-            dst = make_fs(dst_fl, bucket=dst_bucket[dst_fl])
-            clear_prefix(dst, f"gen-seq-{prefix}")
+        def run_generic_seq(_src=src, _dst_fl=dst_fl, _prefix=prefix):
+            dst = make_fs(_dst_fl, bucket=dst_bucket[_dst_fl])
+            clear_prefix(dst, f"gen-seq-{_prefix}")
             hook = ObjectStoreFileCopyHook(dst)
             return GenericFileTransfer(
                 destination_hook=hook,
                 copy_params={
-                    "source_fs": src.fs,
-                    "source_bucket": src.bucket,
-                    "source_prefix": prefix,
-                    "dest_prefix": f"gen-seq-{prefix}",
+                    "source_fs": _src.fs,
+                    "source_bucket": _src.bucket,
+                    "source_prefix": _prefix,
+                    "dest_prefix": f"gen-seq-{_prefix}",
                     "mode": "sequential",
                     "chunk_size": chunk_size,
                     "latency_s": latency_s,
@@ -296,18 +297,17 @@ def _bench_pairs(*, scenario, pairs, rounds, seed_fn, src_bucket, dst_bucket,
 
         # (c) parallel for each worker count
         for w in workers_list:
-            def run_par(workers=w):
-                src = seed()
-                dst = make_fs(dst_fl, bucket=dst_bucket[dst_fl])
-                clear_prefix(dst, f"gen-par{workers}-{prefix}")
+            def run_par(workers=w, _src=src, _dst_fl=dst_fl, _prefix=prefix):
+                dst = make_fs(_dst_fl, bucket=dst_bucket[_dst_fl])
+                clear_prefix(dst, f"gen-par{workers}-{_prefix}")
                 hook = ObjectStoreFileCopyHook(dst)
                 return GenericFileTransfer(
                     destination_hook=hook,
                     copy_params={
-                        "source_fs": src.fs,
-                        "source_bucket": src.bucket,
-                        "source_prefix": prefix,
-                        "dest_prefix": f"gen-par{workers}-{prefix}",
+                        "source_fs": _src.fs,
+                        "source_bucket": _src.bucket,
+                        "source_prefix": _prefix,
+                        "dest_prefix": f"gen-par{workers}-{_prefix}",
                         "mode": "parallel",
                         "workers": workers,
                         "chunk_size": chunk_size,
@@ -331,22 +331,19 @@ def _bench_large(*, pairs, rounds, size_mb, src_bucket, dst_bucket, workers_list
         prefix = f"large-{src_fl}-{dst_fl}"
         row = {"pair": f"{src_fl}->{dst_fl}", "size_mb": size_mb, "modes": {}}
 
-        def seed():
-            src = make_fs(src_fl, bucket=src_bucket[src_fl])
-            seed_one_large(src, prefix, size_mb=size_mb)
-            return src
+        src = make_fs(src_fl, bucket=src_bucket[src_fl])
+        seed_one_large(src, prefix, size_mb=size_mb)
 
-        def run_seq():
-            src = seed()
-            dst = make_fs(dst_fl, bucket=dst_bucket[dst_fl])
-            clear_prefix(dst, f"lseq-{prefix}")
+        def run_seq(_src=src, _dst_fl=dst_fl, _prefix=prefix):
+            dst = make_fs(_dst_fl, bucket=dst_bucket[_dst_fl])
+            clear_prefix(dst, f"lseq-{_prefix}")
             return GenericFileTransfer(
                 destination_hook=ObjectStoreFileCopyHook(dst),
                 copy_params={
-                    "source_fs": src.fs,
-                    "source_bucket": src.bucket,
-                    "source_prefix": prefix,
-                    "dest_prefix": f"lseq-{prefix}",
+                    "source_fs": _src.fs,
+                    "source_bucket": _src.bucket,
+                    "source_prefix": _prefix,
+                    "dest_prefix": f"lseq-{_prefix}",
                     "mode": "sequential",
                     "chunk_size": chunk_size,
                 },
@@ -354,17 +351,16 @@ def _bench_large(*, pairs, rounds, size_mb, src_bucket, dst_bucket, workers_list
 
         row["modes"]["generic_sequential"] = _timed(run_seq, rounds)
         for w in workers_list[:1]:  # one worker setting for large (single object)
-            def run_par(workers=w):
-                src = seed()
-                dst = make_fs(dst_fl, bucket=dst_bucket[dst_fl])
-                clear_prefix(dst, f"lpar-{prefix}")
+            def run_par(workers=w, _src=src, _dst_fl=dst_fl, _prefix=prefix):
+                dst = make_fs(_dst_fl, bucket=dst_bucket[_dst_fl])
+                clear_prefix(dst, f"lpar-{_prefix}")
                 return GenericFileTransfer(
                     destination_hook=ObjectStoreFileCopyHook(dst),
                     copy_params={
-                        "source_fs": src.fs,
-                        "source_bucket": src.bucket,
-                        "source_prefix": prefix,
-                        "dest_prefix": f"lpar-{prefix}",
+                        "source_fs": _src.fs,
+                        "source_bucket": _src.bucket,
+                        "source_prefix": _prefix,
+                        "dest_prefix": f"lpar-{_prefix}",
                         "mode": "parallel",
                         "workers": workers,
                         "chunk_size": chunk_size,
