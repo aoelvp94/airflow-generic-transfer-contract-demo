@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "generic-transfer-contract"
-version = "0.1.0"
+version = "0.2.0"
 description = "Demo: one generic record-transfer operator on hook contracts (no per-pair operators)"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.10"
@@ -23,6 +23,11 @@ emulators = [
   "google-cloud-storage>=2.14",
   "azure-storage-blob>=12.19",
 ]
+adbc = [
+  "pyarrow",
+  "adbc-driver-manager",
+  "adbc-driver-sqlite",
+]
 dev = ["pytest", "requests-mock"]
 
 [tool.setuptools.packages.find]
@@ -34,4 +39,5 @@ pythonpath = ["src", "."]
 markers = [
   "iceberg: needs pyiceberg optional extra",
   "integration: needs object-store emulators (just up)",
+  "adbc: needs adbc-driver-sqlite optional extra",
 ]
