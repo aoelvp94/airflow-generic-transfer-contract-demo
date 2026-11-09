@@ -246,8 +246,9 @@ class ObjectStoreCopySink:
     """Copy keys from a source store prefix into a destination DictObjectStore
     or ObjectStoragePath root.
 
-    Skips folder markers via :func:`list_transfer_keys`. This is the file-to-file
-    half of the thesis: one rule, every registered filesystem.
+    Implements ``FileCopyable.copy_files``. ``write_batches`` remains as a
+    thin compatibility wrapper that drains batches then delegates to
+    ``copy_files`` — prefer ``GenericFileTransfer`` for new code.
     """
 
     def __init__(self, destination: Any):
@@ -259,27 +260,68 @@ class ObjectStoreCopySink:
             self.destination = destination
             self._mode = "store"
 
+    def describe_params(self, role: str = "copy") -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "source_fs": {"type": "object"},
+                "source_prefix": {"type": "string"},
+                "dest_prefix": {"type": "string"},
+                "resume_from": {"type": "array"},
+            },
+            "required": ["source_fs", "source_prefix"],
+            "additionalProperties": True,
+        }
+
+    def get_lineage_datasets(self, **params: Any) -> list[Any]:
+        prefix = params.get("dest_prefix") or params.get("source_prefix") or ""
+        return [{"uri": f"object://destination/{prefix}", "role": "outlet"}]
+
+    def copy_files(
+        self,
+        *,
+        source_fs: Any,
+        source_prefix: str = "",
+        dest_prefix: str = "",
+        resume_from: list[str] | None = None,
+        **_: Any,
+    ) -> dict[str, Any]:
+        keys = list_transfer_keys(source_fs, source_prefix)
+        resume = set(resume_from or [])
+        copied: list[str] = []
+        skipped: list[str] = []
+        for key in keys:
+            rel = (
+                key[len(source_prefix) :].lstrip("/")
+                if source_prefix and key.startswith(source_prefix)
+                else key
+            )
+            out_key = f"{dest_prefix.rstrip('/')}/{rel}" if dest_prefix else rel
+            if out_key in resume or rel in resume:
+                skipped.append(out_key)
+                continue
+            with source_fs.open(key, "rb") as rf:
+                data = rf.read()
+            if self._mode == "store":
+                self.destination.put(out_key, data)
+            else:
+                self.destination.joinpath(out_key).write_bytes(data)
+            copied.append(out_key)
+        return {"copied": copied, "skipped": skipped, "count": len(copied)}
+
     def write_batches(
         self,
         batches: Iterator[list[dict[str, Any]]],
         *,
         source_fs: Any | None = None,
         source_prefix: str = "",
-        **_: Any,
+        **params: Any,
     ) -> dict[str, Any]:
+        """Compatibility shim: drain record batches, then ``copy_files``."""
         for _ in batches:
             pass
         if source_fs is None:
             raise ValueError("source_fs is required for object-store copy")
-        keys = list_transfer_keys(source_fs, source_prefix)
-        copied: list[str] = []
-        for key in keys:
-            rel = key[len(source_prefix) :].lstrip("/") if source_prefix and key.startswith(source_prefix) else key
-            with source_fs.open(key, "rb") as rf:
-                data = rf.read()
-            if self._mode == "store":
-                self.destination.put(rel, data)
-            else:
-                self.destination.joinpath(rel).write_bytes(data)
-            copied.append(rel)
-        return {"copied": copied, "count": len(copied)}
+        return self.copy_files(
+            source_fs=source_fs, source_prefix=source_prefix, **params
+        )

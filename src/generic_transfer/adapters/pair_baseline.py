@@ -126,3 +126,9 @@ PAIRS: list[tuple[Flavour, Flavour]] = [
     ("gcs", "azure"),
     ("azure", "gcs"),
 ]
+
+SAME_PROVIDER_PAIRS: list[tuple[Flavour, Flavour]] = [
+    ("s3", "s3"),
+    ("gcs", "gcs"),
+    ("azure", "azure"),
+]
