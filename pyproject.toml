@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "generic-transfer-contract"
+version = "0.1.0"
+description = "Demo: one generic record-transfer operator on hook contracts (no per-pair operators)"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.10"
+dependencies = [
+  "requests",
+  "fsspec",
+]
+
+[project.optional-dependencies]
+iceberg = ["pyiceberg[pyarrow,sql-sqlite]", "pyarrow"]
+dev = ["pytest", "requests-mock"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "."]
