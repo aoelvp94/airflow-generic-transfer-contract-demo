@@ -1,6 +1,6 @@
 # Emulator bench results
 
-- Captured (UTC): `2026-11-09T21:33:37.286304+00:00`
+- Captured (UTC): `2026-11-09T22:08:36.914135+00:00`
 - Platform: `Linux-6.12.94+-x86_64-with-glibc2.41`
 - Python: `3.12.15`
 - S3 backend: `s3mock` at `http://127.0.0.1:19090`
@@ -27,18 +27,18 @@ Notes:
 
 | Pair | Path | Cold (s) | Warm median (s) | Median (s) | Objects | Requests | Markers copied? |
 |---|---|---:|---:|---:|---:|---:|---|
-| `s3->gcs` | naive | 0.0475 | 0.0444 | 0.0449 | 4 | 9 | True |
-| `s3->gcs` | generic | 0.0391 | 0.0346 | 0.0359 | 2 | 5 | False |
-| `gcs->s3` | naive | 0.0461 | 0.0457 | 0.0461 | 4 | 9 | True |
-| `gcs->s3` | generic | 0.0258 | 0.0244 | 0.0245 | 2 | 5 | False |
-| `s3->azure` | naive | 0.0554 | 0.0512 | 0.0533 | 4 | 9 | True |
-| `s3->azure` | generic | 0.0429 | 0.0372 | 0.0382 | 2 | 5 | False |
-| `azure->s3` | naive | 0.0516 | 0.0544 | 0.0535 | 4 | 9 | True |
-| `azure->s3` | generic | 0.0471 | 0.0468 | 0.0468 | 2 | 5 | False |
-| `gcs->azure` | naive | 0.0317 | 0.0291 | 0.0298 | 4 | 9 | True |
-| `gcs->azure` | generic | 0.0174 | 0.0177 | 0.0174 | 2 | 5 | False |
-| `azure->gcs` | naive | 0.0291 | 0.0294 | 0.0292 | 4 | 9 | True |
-| `azure->gcs` | generic | 0.0339 | 0.0337 | 0.0339 | 2 | 5 | False |
+| `s3->gcs` | naive | 0.0531 | 0.0477 | 0.0481 | 4 | 9 | True |
+| `s3->gcs` | generic | 0.0333 | 0.0350 | 0.0340 | 2 | 5 | False |
+| `gcs->s3` | naive | 0.0442 | 0.0461 | 0.0452 | 4 | 9 | True |
+| `gcs->s3` | generic | 0.0426 | 0.0263 | 0.0275 | 2 | 5 | False |
+| `s3->azure` | naive | 0.0498 | 0.0478 | 0.0496 | 4 | 9 | True |
+| `s3->azure` | generic | 0.0319 | 0.0359 | 0.0359 | 2 | 5 | False |
+| `azure->s3` | naive | 0.0506 | 0.0530 | 0.0518 | 4 | 9 | True |
+| `azure->s3` | generic | 0.0484 | 0.0480 | 0.0480 | 2 | 5 | False |
+| `gcs->azure` | naive | 0.0300 | 0.0280 | 0.0281 | 4 | 9 | True |
+| `gcs->azure` | generic | 0.0182 | 0.0174 | 0.0178 | 2 | 5 | False |
+| `azure->gcs` | naive | 0.0354 | 0.0376 | 0.0367 | 4 | 9 | True |
+| `azure->gcs` | generic | 0.0375 | 0.0380 | 0.0375 | 2 | 5 | False |
 
 ## Takeaway
 
