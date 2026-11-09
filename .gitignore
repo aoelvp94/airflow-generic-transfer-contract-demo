@@ -22,4 +22,8 @@ s3mock-data/
 bench-out/*
 !bench-out/.gitkeep
 !bench-out/BENCH.md
+!bench-out/BENCH_SCALE.md
+!bench-out/BENCH_SCALE.json
+!bench-out/BENCH_ADBC.md
+!bench-out/BENCH_ADBC.json
 !bench-out/latest.json
