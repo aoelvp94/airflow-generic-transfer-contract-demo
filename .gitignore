@@ -27,3 +27,10 @@ bench-out/*
 !bench-out/BENCH_ADBC.md
 !bench-out/BENCH_ADBC.json
 !bench-out/latest.json
+!bench-out/BENCH_SCALE_QUICK.md
+!bench-out/BENCH_SCALE_QUICK.json
+!bench-out/EMULATOR_DEGRADATION.md
+!bench-out/EMULATOR_DEGRADATION.json
+!bench-out/PROFILE_LISTING*.md
+!bench-out/PROFILE_LISTING*.json
+!bench-out/PROFILE_LISTING_cprofile.txt
