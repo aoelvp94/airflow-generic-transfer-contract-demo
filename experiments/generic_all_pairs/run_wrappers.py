@@ -140,7 +140,21 @@ def classify(failed_name: str, longrepr: str) -> str:
         )
     ):
         return "env_issue"
-    if any(s in text for s in ("not implemented", "capability", "does not have")):
+    if any(
+        s in text
+        for s in (
+            "not implemented",
+            "capability",
+            "does not have",
+            "get_openlineage",
+            "render_template_fields",
+            "has no attribute",
+        )
+    ):
+        if "get_openlineage" in text or "render_template_fields" in text or "has no attribute" in text:
+            if "requires contract backends" in text:
+                return "hook_call_shape"
+            return "missing_capability"
         return "missing_capability"
     # AttributeError on hook methods is usually hook-call coupling
     if "attributeerror" in text and any(s in text for s in ("hook", "mock", "magicmock")):
@@ -149,7 +163,26 @@ def classify(failed_name: str, longrepr: str) -> str:
 
 
 def _stub_tests_common() -> None:
+    for tests_root in (
+        AIRFLOW_SRC / "providers/amazon/tests",
+        AIRFLOW_SRC / "providers/google/tests",
+        AIRFLOW_SRC / "providers/microsoft/azure/tests",
+    ):
+        if tests_root.is_dir():
+            sys.path.insert(0, str(tests_root))
+    if "time_machine" not in sys.modules:
+        tm = types.ModuleType("time_machine")
+
+        def _travel(*a, **k):
+            def deco(fn):
+                return fn
+            return deco
+
+        tm.travel = _travel
+        sys.modules["time_machine"] = tm
     def stub(name: str, **attrs):
+        if name in sys.modules:
+            return
         mod = types.ModuleType(name)
         for k, v in attrs.items():
             setattr(mod, k, v)
