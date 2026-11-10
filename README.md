@@ -47,7 +47,7 @@ just reproduce
 
 Expected:
 
-- `just test-all` → **59 passed** (39 unit + 20 integration).
+- `just test-all` → **67 passed** (47 unit + 20 integration).
 - `just bench` → stock HttpToS3-style keeps page 1 (10/25); generic lands 25/25.
 - `just bench-emulators` → naive 4 objects / ~9 req; generic 2 / ~5 (marker tree).
 - `just bench-scale-quick` → large/small/mixed/server-side/latency → `bench-out/BENCH_SCALE.md`.
@@ -59,8 +59,10 @@ Individual steps:
 ```bash
 just install              # uv venv + extras (dev, iceberg, emulators, adbc)
 just up                   # S3Mock + fake-gcs-server + Azurite
-just test                 # unit (includes edge + open points + ADBC)
+just test                 # unit (includes edge + open points + ADBC + pair audit)
 just test-integration     # needs emulators
+just audit                # pair-mapping audit (needs AIRFLOW_SRC or /workspace/airflow-src)
+just rank-capabilities    # sole-blocker / greedy set-cover over PAIR_AUDIT.csv
 just bench                # HTTP pagination evidence
 just bench-emulators      # cross-cloud marker findings
 just bench-scale-quick    # scale/latency (8 MiB / 100 objs)
@@ -106,11 +108,13 @@ contains `;`).
 | File copy ≠ record batches | `FileCopyable` + `GenericFileTransfer`; `write_batches` shim kept for compat. | `just test -k file_copyable` |
 | Arrow/ADBC fits the Protocol | `AdbcSqliteSource/Sink` stream `RecordBatch` through `GenericRecordTransfer`. | `just test -k adbc` / `just bench-adbc` |
 | Some operators stay out of wave one | Partitioning / schema JSON / format-specific pairs deferred. | [`docs/first-wave-exclusions.md`](docs/first-wave-exclusions.md) |
+| How many pair operators map onto one generic op? | Airflow `2b59699b0fe9`: 87 `transfers/` modules / 13 providers (86 excluding `base.py`). Primary (core semantics): 15/84 (17.9%) map cleanly, 43 (51.2%) need a capability, 26 (31.0%) are special. 58/84 (69.0%) would map once capabilities exist. Conservative view (optional special still counts): 12/40/32. Group A (file/record, no SQL): 7/33/4 of 44. | `just audit` / `just rank-capabilities` → [`docs/PAIR_AUDIT.md`](docs/PAIR_AUDIT.md) |
 | Generic looked slower than naive only on Azure sources | Two measurement bugs + the per-key HEAD listing, not an Azure/adlfs issue. After the fix, generic sequential matches naive on all six pairs at 1000 objects. | [`docs/AZURE_SLOWDOWN.md`](docs/AZURE_SLOWDOWN.md) / `just bench-scale` |
 
 Committed snapshots: [`bench-out/BENCH.md`](bench-out/BENCH.md),
 [`bench-out/BENCH_SCALE.md`](bench-out/BENCH_SCALE.md),
-[`bench-out/BENCH_ADBC.md`](bench-out/BENCH_ADBC.md).
+[`bench-out/BENCH_ADBC.md`](bench-out/BENCH_ADBC.md),
+[`bench-out/PAIR_AUDIT.csv`](bench-out/PAIR_AUDIT.csv).
 Azure listing write-up: [`docs/AZURE_SLOWDOWN.md`](docs/AZURE_SLOWDOWN.md).
 
 ## Full-scale results
@@ -208,10 +212,11 @@ src/generic_transfer/
     pair_baseline.py    Naive per-pair native-SDK copy
 docs/first-wave-exclusions.md
 docs/AZURE_SLOWDOWN.md
+docs/PAIR_AUDIT.md      AST audit of Airflow pair-transfer operators
 fake_api/server.py
-docker-compose.yml / emulators.env / scripts/
-tests/                  contract, parity, markers, emulators, edges, open points, ADBC
-bench-out/              BENCH.md, BENCH_SCALE.md, BENCH_ADBC.md
+docker-compose.yml / emulators.env / scripts/   (incl. audit_transfers.py)
+tests/                  contract, parity, markers, emulators, edges, open points, ADBC, pair audit
+bench-out/              BENCH.md, BENCH_SCALE.md, BENCH_ADBC.md, PAIR_AUDIT.csv, CAPABILITY_RANK.md
 ```
 
 ## Bench (local, in-process fake API)

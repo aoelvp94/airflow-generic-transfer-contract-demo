@@ -37,3 +37,14 @@ bench-out/*
 !bench-out/CLIENT_COST.md
 !bench-out/CLIENT_COST.json
 bench-out/*.partial.json
+!bench-out/PAIR_AUDIT.csv
+!bench-out/PAIR_AUDIT.json
+!bench-out/CAPABILITY_RANK.md
+!bench-out/CAPABILITY_RANK.json
+
+# GCS/S3/Azure shim experiment artifacts (do not commit venvs or emulator state)
+experiments/*/.venv/
+experiments/*/.airflow-home/
+experiments/*/pytest-*.xml
+experiments/*/.pytest_cache/
+experiments/*/parity-results.json
