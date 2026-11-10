@@ -260,6 +260,23 @@ def clear_prefix(emu: EmulatorFS, prefix: str) -> None:
 
 _client_cache: dict[str, Any] = {}
 
+#: HTTP connection pool size for cached native clients. The default (10) is
+#: below the 16-worker parallel mode, which made urllib3 discard connections
+#: ("Connection pool is full") and reconnect on every PUT.
+NATIVE_POOL_SIZE = 32
+
+
+def _widen_requests_pool(session: Any) -> None:
+    import requests.adapters
+
+    for scheme in ("http://", "https://"):
+        session.mount(
+            scheme,
+            requests.adapters.HTTPAdapter(
+                pool_connections=NATIVE_POOL_SIZE, pool_maxsize=NATIVE_POOL_SIZE
+            ),
+        )
+
 
 def _native_client(emu: EmulatorFS):
     """Reuse native SDK clients per flavour+endpoint (seed/bench hot path)."""
@@ -276,7 +293,10 @@ def _native_client(emu: EmulatorFS):
                 aws_access_key_id=opts["key"],
                 aws_secret_access_key=opts["secret"],
                 region_name=opts["client_kwargs"].get("region_name", "us-east-1"),
-                config=Config(s3={"addressing_style": "path"}),
+                config=Config(
+                    s3={"addressing_style": "path"},
+                    max_pool_connections=NATIVE_POOL_SIZE,
+                ),
             )
         return _client_cache[key]
     if emu.flavour == "gcs":
@@ -284,17 +304,23 @@ def _native_client(emu: EmulatorFS):
         if key not in _client_cache:
             from google.cloud import storage as gcs_storage
 
-            _client_cache[key] = gcs_storage.Client(
-                project=os.environ.get("GCS_PROJECT", "demo")
-            )
+            client = gcs_storage.Client(project=os.environ.get("GCS_PROJECT", "demo"))
+            _widen_requests_pool(client._http)
+            _client_cache[key] = client
         return _client_cache[key]
     if emu.flavour == "azure":
         key = f"azure:{emu.storage_options.get('connection_string', '')[:40]}"
         if key not in _client_cache:
             from azure.storage.blob import BlobServiceClient
 
+            import requests
+            from azure.core.pipeline.transport import RequestsTransport
+
+            session = requests.Session()
+            _widen_requests_pool(session)
             _client_cache[key] = BlobServiceClient.from_connection_string(
-                emu.storage_options["connection_string"]
+                emu.storage_options["connection_string"],
+                transport=RequestsTransport(session=session, session_owner=False),
             )
         return _client_cache[key]
     raise ValueError(emu.flavour)
