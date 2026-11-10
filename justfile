@@ -59,6 +59,9 @@ bench-adbc:
 audit:
     .venv/bin/python scripts/audit_transfers.py
 
+rank-capabilities:
+    .venv/bin/python scripts/rank_capabilities.py
+
 # Full evidence loop for the dev-list thread.
 e2e: up test-all bench bench-emulators bench-scale-quick bench-adbc
 

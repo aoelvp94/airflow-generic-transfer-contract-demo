@@ -60,15 +60,15 @@
       "object_retention",
       "pagination",
       "path_layout",
+      "replace",
       "schema_sidecar",
       "server_side_copy",
       "upsert",
+      "wildcard_or_prefix",
       "xcom_side_channel"
     ],
     "informational_flags": [
-      "openlineage",
-      "replace",
-      "wildcard_or_prefix"
+      "openlineage"
     ],
     "flag_arg_rules": {
       "compression": [
@@ -230,12 +230,26 @@
     "concrete_operators": 84,
     "classification": {
       "maps_cleanly": {
-        "count": 16,
-        "pct": 19.0
+        "count": 15,
+        "pct": 17.9
       },
       "needs_capability": {
-        "count": 36,
-        "pct": 42.9
+        "count": 43,
+        "pct": 51.2
+      },
+      "special": {
+        "count": 26,
+        "pct": 31.0
+      }
+    },
+    "classification_conservative": {
+      "maps_cleanly": {
+        "count": 12,
+        "pct": 14.3
+      },
+      "needs_capability": {
+        "count": 40,
+        "pct": 47.6
       },
       "special": {
         "count": 32,
@@ -246,33 +260,33 @@
       {
         "kind": "file→file",
         "operators": 28,
-        "maps_cleanly": 5,
-        "needs_capability": 23,
+        "maps_cleanly": 4,
+        "needs_capability": 24,
         "special": 0,
-        "maps_cleanly_pct": 17.9
+        "maps_cleanly_pct": 14.3
       },
       {
         "kind": "record→file",
         "operators": 14,
-        "maps_cleanly": 3,
-        "needs_capability": 8,
+        "maps_cleanly": 2,
+        "needs_capability": 9,
         "special": 3,
-        "maps_cleanly_pct": 21.4
+        "maps_cleanly_pct": 14.3
       },
       {
         "kind": "sql→sql",
         "operators": 14,
         "maps_cleanly": 4,
-        "needs_capability": 1,
-        "special": 9,
+        "needs_capability": 5,
+        "special": 5,
         "maps_cleanly_pct": 28.6
       },
       {
         "kind": "sql→file",
         "operators": 12,
         "maps_cleanly": 2,
-        "needs_capability": 1,
-        "special": 9,
+        "needs_capability": 2,
+        "special": 8,
         "maps_cleanly_pct": 16.7
       },
       {
@@ -286,10 +300,10 @@
       {
         "kind": "sql→record",
         "operators": 2,
-        "maps_cleanly": 1,
+        "maps_cleanly": 2,
         "needs_capability": 0,
-        "special": 1,
-        "maps_cleanly_pct": 50.0
+        "special": 0,
+        "maps_cleanly_pct": 100.0
       },
       {
         "kind": "file→record",
@@ -312,25 +326,25 @@
       {
         "provider": "google",
         "operators": 35,
-        "maps_cleanly": 8,
-        "needs_capability": 16,
+        "maps_cleanly": 6,
+        "needs_capability": 18,
         "special": 11,
-        "maps_cleanly_pct": 22.9
+        "maps_cleanly_pct": 17.1
       },
       {
         "provider": "amazon",
         "operators": 21,
         "maps_cleanly": 3,
-        "needs_capability": 11,
-        "special": 7,
+        "needs_capability": 13,
+        "special": 5,
         "maps_cleanly_pct": 14.3
       },
       {
         "provider": "apache.hive",
         "operators": 6,
         "maps_cleanly": 1,
-        "needs_capability": 0,
-        "special": 5,
+        "needs_capability": 1,
+        "special": 4,
         "maps_cleanly_pct": 16.7
       },
       {
@@ -344,10 +358,10 @@
       {
         "provider": "mysql",
         "operators": 4,
-        "maps_cleanly": 0,
-        "needs_capability": 1,
-        "special": 3,
-        "maps_cleanly_pct": 0.0
+        "maps_cleanly": 2,
+        "needs_capability": 2,
+        "special": 0,
+        "maps_cleanly_pct": 50.0
       },
       {
         "provider": "teradata",
@@ -376,10 +390,10 @@
       {
         "provider": "common.io",
         "operators": 1,
-        "maps_cleanly": 1,
-        "needs_capability": 0,
+        "maps_cleanly": 0,
+        "needs_capability": 1,
         "special": 0,
-        "maps_cleanly_pct": 100.0
+        "maps_cleanly_pct": 0.0
       },
       {
         "provider": "oracle",
@@ -565,6 +579,542 @@
         "flag": "point_in_time_export",
         "concrete_operators": 1
       }
+    ],
+    "optional_special_operators": [
+      {
+        "class_name": "DynamoDBToS3Operator",
+        "optional_special": [
+          "point_in_time_export"
+        ],
+        "classification": "special",
+        "classification_conservative": "special"
+      },
+      {
+        "class_name": "HiveToDynamoDBOperator",
+        "optional_special": [
+          "custom_callable"
+        ],
+        "classification": "maps_cleanly",
+        "classification_conservative": "special"
+      },
+      {
+        "class_name": "RedshiftToS3Operator",
+        "optional_special": [
+          "warehouse_job_options"
+        ],
+        "classification": "special",
+        "classification_conservative": "special"
+      },
+      {
+        "class_name": "S3ToRedshiftOperator",
+        "optional_special": [
+          "warehouse_job_options"
+        ],
+        "classification": "special",
+        "classification_conservative": "special"
+      },
+      {
+        "class_name": "SqlToS3Operator",
+        "optional_special": [
+          "partitioning_or_splitting"
+        ],
+        "classification": "needs_capability",
+        "classification_conservative": "special"
+      },
+      {
+        "class_name": "HiveToDruidOperator",
+        "optional_special": [
+          "dest_table_ddl"
+        ],
+        "classification": "special",
+        "classification_conservative": "special"
+      },
+      {
+        "class_name": "HiveToMySqlOperator",
+        "optional_special": [
+          "pre_post_operator_sql"
+        ],
+        "classification": "needs_capability",
+        "classification_conservative": "special"
+      },
+      {
+        "class_name": "MsSqlToHiveOperator",
+        "optional_special": [
+          "partitioning_or_splitting"
+        ],
+        "classification": "special",
+        "classification_conservative": "special"
+      },
+      {
+        "class_name": "MySqlToHiveOperator",
+        "optional_special": [
+          "partitioning_or_splitting"
+        ],
+        "classification": "special",
+        "classification_conservative": "special"
+      },
+      {
+        "class_name": "S3ToHiveOperator",
+        "optional_special": [
+          "partitioning_or_splitting"
+        ],
+        "classification": "special",
+        "classification_conservative": "special"
+      },
+      {
+        "class_name": "VerticaToHiveOperator",
+        "optional_special": [
+          "partitioning_or_splitting"
+        ],
+        "classification": "special",
+        "classification_conservative": "special"
+      },
+      {
+        "class_name": "GCSToBigQueryOperator",
+        "optional_special": [
+          "partitioning_or_splitting"
+        ],
+        "classification": "special",
+        "classification_conservative": "special"
+      },
+      {
+        "class_name": "PrestoToMySqlOperator",
+        "optional_special": [
+          "pre_post_operator_sql"
+        ],
+        "classification": "maps_cleanly",
+        "classification_conservative": "special"
+      },
+      {
+        "class_name": "TrinoToMySqlOperator",
+        "optional_special": [
+          "pre_post_operator_sql"
+        ],
+        "classification": "maps_cleanly",
+        "classification_conservative": "special"
+      },
+      {
+        "class_name": "VerticaToMySqlOperator",
+        "optional_special": [
+          "pre_post_operator_sql"
+        ],
+        "classification": "needs_capability",
+        "classification_conservative": "special"
+      },
+      {
+        "class_name": "AzureBlobStorageToTeradataOperator",
+        "optional_special": [
+          "teradata_nos_auth"
+        ],
+        "classification": "special",
+        "classification_conservative": "special"
+      },
+      {
+        "class_name": "S3ToTeradataOperator",
+        "optional_special": [
+          "teradata_nos_auth"
+        ],
+        "classification": "special",
+        "classification_conservative": "special"
+      }
+    ],
+    "capability_heavy_threshold": 4,
+    "capability_heavy": {
+      "count": 10,
+      "operators": [
+        {
+          "class_name": "S3ToGCSOperator",
+          "kind": "file→file",
+          "capability_count": 6,
+          "flags": [
+            "compression",
+            "deferrable",
+            "path_layout",
+            "replace",
+            "server_side_copy",
+            "wildcard_or_prefix"
+          ]
+        },
+        {
+          "class_name": "GCSToBigQueryOperator",
+          "kind": "file→sql",
+          "capability_count": 5,
+          "flags": [
+            "acl_or_extra_args",
+            "compression",
+            "deferrable",
+            "replace",
+            "schema_sidecar"
+          ]
+        },
+        {
+          "class_name": "GCSToGCSOperator",
+          "kind": "file→file",
+          "capability_count": 5,
+          "flags": [
+            "incremental_filter",
+            "move_semantics",
+            "object_retention",
+            "replace",
+            "wildcard_or_prefix"
+          ]
+        },
+        {
+          "class_name": "ExasolToS3Operator",
+          "kind": "sql→file",
+          "capability_count": 4,
+          "flags": [
+            "acl_or_extra_args",
+            "compression",
+            "dest_encryption",
+            "replace"
+          ]
+        },
+        {
+          "class_name": "FTPToS3Operator",
+          "kind": "file→file",
+          "capability_count": 4,
+          "flags": [
+            "acl_or_extra_args",
+            "compression",
+            "dest_encryption",
+            "replace"
+          ]
+        },
+        {
+          "class_name": "GCSToS3Operator",
+          "kind": "file→file",
+          "capability_count": 4,
+          "flags": [
+            "acl_or_extra_args",
+            "path_layout",
+            "replace",
+            "wildcard_or_prefix"
+          ]
+        },
+        {
+          "class_name": "LocalFilesystemToS3Operator",
+          "kind": "file→file",
+          "capability_count": 4,
+          "flags": [
+            "acl_or_extra_args",
+            "compression",
+            "dest_encryption",
+            "replace"
+          ]
+        },
+        {
+          "class_name": "SFTPToS3Operator",
+          "kind": "file→file",
+          "capability_count": 4,
+          "flags": [
+            "acl_or_extra_args",
+            "compression",
+            "dest_encryption",
+            "replace"
+          ]
+        },
+        {
+          "class_name": "SFTPToWasbOperator",
+          "kind": "file→file",
+          "capability_count": 4,
+          "flags": [
+            "acl_or_extra_args",
+            "move_semantics",
+            "replace",
+            "wildcard_or_prefix"
+          ]
+        },
+        {
+          "class_name": "SalesforceToS3Operator",
+          "kind": "record→file",
+          "capability_count": 4,
+          "flags": [
+            "acl_or_extra_args",
+            "compression",
+            "dest_encryption",
+            "replace"
+          ]
+        }
+      ]
+    },
+    "split": {
+      "A_file_or_record": {
+        "label": "file/record (file→file, record→file, file→record)",
+        "operators": 44,
+        "classification": {
+          "maps_cleanly": {
+            "count": 7,
+            "pct": 15.9
+          },
+          "needs_capability": {
+            "count": 33,
+            "pct": 75.0
+          },
+          "special": {
+            "count": 4,
+            "pct": 9.1
+          }
+        },
+        "by_kind": [
+          {
+            "kind": "file→file",
+            "operators": 28
+          },
+          {
+            "kind": "record→file",
+            "operators": 14
+          },
+          {
+            "kind": "file→record",
+            "operators": 2
+          }
+        ]
+      },
+      "B_sql": {
+        "label": "touches SQL (any kind with a sql endpoint)",
+        "operators": 40,
+        "classification": {
+          "maps_cleanly": {
+            "count": 8,
+            "pct": 20.0
+          },
+          "needs_capability": {
+            "count": 10,
+            "pct": 25.0
+          },
+          "special": {
+            "count": 22,
+            "pct": 55.0
+          }
+        },
+        "by_kind": [
+          {
+            "kind": "sql→sql",
+            "operators": 14
+          },
+          {
+            "kind": "sql→file",
+            "operators": 12
+          },
+          {
+            "kind": "file→sql",
+            "operators": 10
+          },
+          {
+            "kind": "sql→record",
+            "operators": 2
+          },
+          {
+            "kind": "sql→message",
+            "operators": 2
+          }
+        ]
+      },
+      "other": {
+        "label": "other kinds",
+        "operators": 0,
+        "classification": {
+          "maps_cleanly": {
+            "count": 0,
+            "pct": 0.0
+          },
+          "needs_capability": {
+            "count": 0,
+            "pct": 0.0
+          },
+          "special": {
+            "count": 0,
+            "pct": 0.0
+          }
+        },
+        "by_kind": []
+      }
+    },
+    "unresolved_bases": [
+      {
+        "class_name": "BaseOperator",
+        "reason": "Airflow core; not present in a providers/-only checkout"
+      },
+      {
+        "class_name": "AwsBaseHookMixin",
+        "reason": "no class definition found under providers/"
+      }
+    ],
+    "resolved_external_bases": [
+      "ADLSListOperator",
+      "AwsBaseOperator",
+      "BaseSQLOperator",
+      "S3ListOperator"
+    ],
+    "previous_ref": "bdf2cbe",
+    "previous_classification": {
+      "maps_cleanly": {
+        "count": 16,
+        "pct": 19.0
+      },
+      "needs_capability": {
+        "count": 36,
+        "pct": 42.9
+      },
+      "special": {
+        "count": 32,
+        "pct": 38.1
+      }
+    },
+    "shifts": [
+      {
+        "class_name": "HiveToDynamoDBOperator",
+        "kind": "sql→record",
+        "from": "special",
+        "to": "maps_cleanly",
+        "reasons": [],
+        "optional_special": [
+          "custom_callable"
+        ],
+        "capability_count": 0,
+        "flags": [
+          "custom_callable"
+        ]
+      },
+      {
+        "class_name": "ImapAttachmentToS3Operator",
+        "kind": "record→file",
+        "from": "maps_cleanly",
+        "to": "needs_capability",
+        "reasons": [
+          "replace"
+        ],
+        "optional_special": [],
+        "capability_count": 1,
+        "flags": [
+          "replace"
+        ]
+      },
+      {
+        "class_name": "SqlToS3Operator",
+        "kind": "sql→file",
+        "from": "special",
+        "to": "needs_capability",
+        "reasons": [
+          "pagination",
+          "replace"
+        ],
+        "optional_special": [
+          "partitioning_or_splitting"
+        ],
+        "capability_count": 2,
+        "flags": [
+          "pagination",
+          "partitioning_or_splitting",
+          "replace"
+        ]
+      },
+      {
+        "class_name": "HiveToMySqlOperator",
+        "kind": "sql→sql",
+        "from": "special",
+        "to": "needs_capability",
+        "reasons": [
+          "bulk_load"
+        ],
+        "optional_special": [
+          "pre_post_operator_sql"
+        ],
+        "capability_count": 1,
+        "flags": [
+          "bulk_load",
+          "pre_post_operator_sql"
+        ]
+      },
+      {
+        "class_name": "FileTransferOperator",
+        "kind": "file→file",
+        "from": "maps_cleanly",
+        "to": "needs_capability",
+        "reasons": [
+          "replace"
+        ],
+        "optional_special": [],
+        "capability_count": 1,
+        "flags": [
+          "openlineage",
+          "replace"
+        ]
+      },
+      {
+        "class_name": "BigQueryToMsSqlOperator",
+        "kind": "sql→sql",
+        "from": "maps_cleanly",
+        "to": "needs_capability",
+        "reasons": [
+          "replace"
+        ],
+        "optional_special": [],
+        "capability_count": 1,
+        "flags": [
+          "replace"
+        ]
+      },
+      {
+        "class_name": "BigQueryToMySqlOperator",
+        "kind": "sql→sql",
+        "from": "maps_cleanly",
+        "to": "needs_capability",
+        "reasons": [
+          "replace"
+        ],
+        "optional_special": [],
+        "capability_count": 1,
+        "flags": [
+          "replace"
+        ]
+      },
+      {
+        "class_name": "PrestoToMySqlOperator",
+        "kind": "sql→sql",
+        "from": "special",
+        "to": "maps_cleanly",
+        "reasons": [],
+        "optional_special": [
+          "pre_post_operator_sql"
+        ],
+        "capability_count": 0,
+        "flags": [
+          "pre_post_operator_sql"
+        ]
+      },
+      {
+        "class_name": "TrinoToMySqlOperator",
+        "kind": "sql→sql",
+        "from": "special",
+        "to": "maps_cleanly",
+        "reasons": [],
+        "optional_special": [
+          "pre_post_operator_sql"
+        ],
+        "capability_count": 0,
+        "flags": [
+          "pre_post_operator_sql"
+        ]
+      },
+      {
+        "class_name": "VerticaToMySqlOperator",
+        "kind": "sql→sql",
+        "from": "special",
+        "to": "needs_capability",
+        "reasons": [
+          "bulk_load"
+        ],
+        "optional_special": [
+          "pre_post_operator_sql"
+        ],
+        "capability_count": 1,
+        "flags": [
+          "bulk_load",
+          "pre_post_operator_sql"
+        ]
+      }
     ]
   },
   "operators": [
@@ -666,9 +1216,28 @@
         "replace",
         "wildcard_or_prefix"
       ],
+      "core_flags": [],
+      "optional_flags": [
+        "acl_or_extra_args",
+        "replace",
+        "wildcard_or_prefix"
+      ],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
-        "acl_or_extra_args"
+        "acl_or_extra_args",
+        "replace",
+        "wildcard_or_prefix"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "acl_or_extra_args",
+        "replace",
+        "wildcard_or_prefix"
+      ],
+      "capability_count": 3,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -712,8 +1281,17 @@
         "dest_aws_conn_id"
       ],
       "flags": [],
+      "core_flags": [],
+      "optional_flags": [],
+      "optional_special": [],
       "classification": "maps_cleanly",
-      "classification_reasons": []
+      "classification_reasons": [],
+      "classification_conservative": "maps_cleanly",
+      "classification_conservative_reasons": [],
+      "capability_count": 0,
+      "unresolved_bases": [
+        "BaseOperator"
+      ]
     },
     {
       "provider": "amazon",
@@ -836,10 +1414,28 @@
         "point_in_time_export",
         "wildcard_or_prefix"
       ],
+      "core_flags": [
+        "custom_callable"
+      ],
+      "optional_flags": [
+        "point_in_time_export",
+        "wildcard_or_prefix"
+      ],
+      "optional_special": [
+        "point_in_time_export"
+      ],
       "classification": "special",
       "classification_reasons": [
+        "custom_callable"
+      ],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
         "custom_callable",
         "point_in_time_export"
+      ],
+      "capability_count": 1,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -937,11 +1533,31 @@
         "dest_encryption",
         "replace"
       ],
+      "core_flags": [],
+      "optional_flags": [
+        "acl_or_extra_args",
+        "compression",
+        "dest_encryption",
+        "replace"
+      ],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
         "acl_or_extra_args",
         "compression",
-        "dest_encryption"
+        "dest_encryption",
+        "replace"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "acl_or_extra_args",
+        "compression",
+        "dest_encryption",
+        "replace"
+      ],
+      "capability_count": 4,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -1045,11 +1661,31 @@
         "dest_encryption",
         "replace"
       ],
+      "core_flags": [],
+      "optional_flags": [
+        "acl_or_extra_args",
+        "compression",
+        "dest_encryption",
+        "replace"
+      ],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
         "acl_or_extra_args",
         "compression",
-        "dest_encryption"
+        "dest_encryption",
+        "replace"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "acl_or_extra_args",
+        "compression",
+        "dest_encryption",
+        "replace"
+      ],
+      "capability_count": 4,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -1168,10 +1804,33 @@
         "replace",
         "wildcard_or_prefix"
       ],
+      "core_flags": [
+        "openlineage",
+        "path_layout"
+      ],
+      "optional_flags": [
+        "acl_or_extra_args",
+        "replace",
+        "wildcard_or_prefix"
+      ],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
         "acl_or_extra_args",
-        "path_layout"
+        "path_layout",
+        "replace",
+        "wildcard_or_prefix"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "acl_or_extra_args",
+        "path_layout",
+        "replace",
+        "wildcard_or_prefix"
+      ],
+      "capability_count": 4,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -1249,9 +1908,22 @@
       "flags": [
         "compression"
       ],
+      "core_flags": [
+        "compression"
+      ],
+      "optional_flags": [],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
         "compression"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "compression"
+      ],
+      "capability_count": 1,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -1365,10 +2037,28 @@
         "replace",
         "xcom_side_channel"
       ],
+      "core_flags": [],
+      "optional_flags": [
+        "pagination",
+        "replace",
+        "xcom_side_channel"
+      ],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
         "pagination",
+        "replace",
         "xcom_side_channel"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "pagination",
+        "replace",
+        "xcom_side_channel"
+      ],
+      "capability_count": 3,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -1459,9 +2149,22 @@
       "flags": [
         "custom_callable"
       ],
-      "classification": "special",
-      "classification_reasons": [
+      "core_flags": [],
+      "optional_flags": [
         "custom_callable"
+      ],
+      "optional_special": [
+        "custom_callable"
+      ],
+      "classification": "maps_cleanly",
+      "classification_reasons": [],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
+        "custom_callable"
+      ],
+      "capability_count": 0,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -1600,10 +2303,28 @@
         "dest_encryption",
         "replace"
       ],
+      "core_flags": [],
+      "optional_flags": [
+        "acl_or_extra_args",
+        "dest_encryption",
+        "replace"
+      ],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
         "acl_or_extra_args",
-        "dest_encryption"
+        "dest_encryption",
+        "replace"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "acl_or_extra_args",
+        "dest_encryption",
+        "replace"
+      ],
+      "capability_count": 3,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -1686,8 +2407,23 @@
       "flags": [
         "replace"
       ],
-      "classification": "maps_cleanly",
-      "classification_reasons": []
+      "core_flags": [],
+      "optional_flags": [
+        "replace"
+      ],
+      "optional_special": [],
+      "classification": "needs_capability",
+      "classification_reasons": [
+        "replace"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "replace"
+      ],
+      "capability_count": 1,
+      "unresolved_bases": [
+        "BaseOperator"
+      ]
     },
     {
       "provider": "amazon",
@@ -1771,11 +2507,31 @@
         "dest_encryption",
         "replace"
       ],
+      "core_flags": [],
+      "optional_flags": [
+        "acl_or_extra_args",
+        "compression",
+        "dest_encryption",
+        "replace"
+      ],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
         "acl_or_extra_args",
         "compression",
-        "dest_encryption"
+        "dest_encryption",
+        "replace"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "acl_or_extra_args",
+        "compression",
+        "dest_encryption",
+        "replace"
+      ],
+      "capability_count": 4,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -1872,9 +2628,25 @@
         "compression",
         "replace"
       ],
+      "core_flags": [],
+      "optional_flags": [
+        "compression",
+        "replace"
+      ],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
-        "compression"
+        "compression",
+        "replace"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "compression",
+        "replace"
+      ],
+      "capability_count": 2,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -1993,10 +2765,28 @@
         "warehouse_copy_job",
         "warehouse_job_options"
       ],
+      "core_flags": [
+        "openlineage",
+        "warehouse_copy_job"
+      ],
+      "optional_flags": [
+        "warehouse_job_options"
+      ],
+      "optional_special": [
+        "warehouse_job_options"
+      ],
       "classification": "special",
       "classification_reasons": [
+        "warehouse_copy_job"
+      ],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
         "warehouse_copy_job",
         "warehouse_job_options"
+      ],
+      "capability_count": 0,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -2126,10 +2916,25 @@
         "warehouse_copy_job",
         "warehouse_job_options"
       ],
+      "core_flags": [
+        "warehouse_copy_job",
+        "warehouse_job_options"
+      ],
+      "optional_flags": [],
+      "optional_special": [],
       "classification": "special",
       "classification_reasons": [
         "warehouse_copy_job",
         "warehouse_job_options"
+      ],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
+        "warehouse_copy_job",
+        "warehouse_job_options"
+      ],
+      "capability_count": 0,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -2208,8 +3013,17 @@
         "execute"
       ],
       "flags": [],
+      "core_flags": [],
+      "optional_flags": [],
+      "optional_special": [],
       "classification": "maps_cleanly",
-      "classification_reasons": []
+      "classification_reasons": [],
+      "classification_conservative": "maps_cleanly",
+      "classification_conservative_reasons": [],
+      "capability_count": 0,
+      "unresolved_bases": [
+        "BaseOperator"
+      ]
     },
     {
       "provider": "amazon",
@@ -2324,10 +3138,29 @@
         "warehouse_copy_job",
         "warehouse_job_options"
       ],
+      "core_flags": [
+        "openlineage",
+        "warehouse_copy_job"
+      ],
+      "optional_flags": [
+        "upsert",
+        "warehouse_job_options"
+      ],
+      "optional_special": [
+        "warehouse_job_options"
+      ],
       "classification": "special",
       "classification_reasons": [
+        "warehouse_copy_job"
+      ],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
         "warehouse_copy_job",
         "warehouse_job_options"
+      ],
+      "capability_count": 1,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -2417,8 +3250,17 @@
         "execute"
       ],
       "flags": [],
+      "core_flags": [],
+      "optional_flags": [],
+      "optional_special": [],
       "classification": "maps_cleanly",
-      "classification_reasons": []
+      "classification_reasons": [],
+      "classification_conservative": "maps_cleanly",
+      "classification_conservative_reasons": [],
+      "capability_count": 0,
+      "unresolved_bases": [
+        "BaseOperator"
+      ]
     },
     {
       "provider": "amazon",
@@ -2508,9 +3350,22 @@
       "flags": [
         "custom_callable"
       ],
+      "core_flags": [
+        "custom_callable"
+      ],
+      "optional_flags": [],
+      "optional_special": [],
       "classification": "special",
       "classification_reasons": [
         "custom_callable"
+      ],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
+        "custom_callable"
+      ],
+      "capability_count": 0,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -2621,11 +3476,31 @@
         "dest_encryption",
         "replace"
       ],
+      "core_flags": [],
+      "optional_flags": [
+        "acl_or_extra_args",
+        "compression",
+        "dest_encryption",
+        "replace"
+      ],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
         "acl_or_extra_args",
         "compression",
-        "dest_encryption"
+        "dest_encryption",
+        "replace"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "acl_or_extra_args",
+        "compression",
+        "dest_encryption",
+        "replace"
+      ],
+      "capability_count": 4,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -2745,11 +3620,31 @@
         "dest_encryption",
         "replace"
       ],
+      "core_flags": [],
+      "optional_flags": [
+        "acl_or_extra_args",
+        "compression",
+        "dest_encryption",
+        "replace"
+      ],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
         "acl_or_extra_args",
         "compression",
-        "dest_encryption"
+        "dest_encryption",
+        "replace"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "acl_or_extra_args",
+        "compression",
+        "dest_encryption",
+        "replace"
+      ],
+      "capability_count": 4,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -2896,9 +3791,27 @@
         "partitioning_or_splitting",
         "replace"
       ],
-      "classification": "special",
-      "classification_reasons": [
+      "core_flags": [],
+      "optional_flags": [
+        "pagination",
+        "partitioning_or_splitting",
+        "replace"
+      ],
+      "optional_special": [
         "partitioning_or_splitting"
+      ],
+      "classification": "needs_capability",
+      "classification_reasons": [
+        "pagination",
+        "replace"
+      ],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
+        "partitioning_or_splitting"
+      ],
+      "capability_count": 2,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -3015,12 +3928,33 @@
         "warehouse_copy_job",
         "warehouse_job_options"
       ],
+      "core_flags": [
+        "partitioning_or_splitting",
+        "warehouse_copy_job",
+        "warehouse_job_options"
+      ],
+      "optional_flags": [
+        "dest_table_ddl"
+      ],
+      "optional_special": [
+        "dest_table_ddl"
+      ],
       "classification": "special",
       "classification_reasons": [
+        "partitioning_or_splitting",
+        "warehouse_copy_job",
+        "warehouse_job_options"
+      ],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
         "dest_table_ddl",
         "partitioning_or_splitting",
         "warehouse_copy_job",
         "warehouse_job_options"
+      ],
+      "capability_count": 0,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -3101,9 +4035,25 @@
         "bulk_load",
         "pre_post_operator_sql"
       ],
-      "classification": "special",
-      "classification_reasons": [
+      "core_flags": [],
+      "optional_flags": [
+        "bulk_load",
         "pre_post_operator_sql"
+      ],
+      "optional_special": [
+        "pre_post_operator_sql"
+      ],
+      "classification": "needs_capability",
+      "classification_reasons": [
+        "bulk_load"
+      ],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
+        "pre_post_operator_sql"
+      ],
+      "capability_count": 1,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -3158,8 +4108,17 @@
         "execute"
       ],
       "flags": [],
+      "core_flags": [],
+      "optional_flags": [],
+      "optional_special": [],
       "classification": "maps_cleanly",
-      "classification_reasons": []
+      "classification_reasons": [],
+      "classification_conservative": "maps_cleanly",
+      "classification_conservative_reasons": [],
+      "capability_count": 0,
+      "unresolved_bases": [
+        "BaseOperator"
+      ]
     },
     {
       "provider": "apache.hive",
@@ -3248,10 +4207,27 @@
         "dest_table_ddl",
         "partitioning_or_splitting"
       ],
+      "core_flags": [
+        "dest_table_ddl"
+      ],
+      "optional_flags": [
+        "partitioning_or_splitting"
+      ],
+      "optional_special": [
+        "partitioning_or_splitting"
+      ],
       "classification": "special",
       "classification_reasons": [
+        "dest_table_ddl"
+      ],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
         "dest_table_ddl",
         "partitioning_or_splitting"
+      ],
+      "capability_count": 0,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -3356,10 +4332,27 @@
         "dest_table_ddl",
         "partitioning_or_splitting"
       ],
+      "core_flags": [
+        "dest_table_ddl"
+      ],
+      "optional_flags": [
+        "partitioning_or_splitting"
+      ],
+      "optional_special": [
+        "partitioning_or_splitting"
+      ],
       "classification": "special",
       "classification_reasons": [
+        "dest_table_ddl"
+      ],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
         "dest_table_ddl",
         "partitioning_or_splitting"
+      ],
+      "capability_count": 0,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -3488,10 +4481,29 @@
         "partitioning_or_splitting",
         "wildcard_or_prefix"
       ],
+      "core_flags": [
+        "dest_table_ddl"
+      ],
+      "optional_flags": [
+        "compression",
+        "partitioning_or_splitting",
+        "wildcard_or_prefix"
+      ],
+      "optional_special": [
+        "partitioning_or_splitting"
+      ],
       "classification": "special",
       "classification_reasons": [
+        "dest_table_ddl"
+      ],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
         "dest_table_ddl",
         "partitioning_or_splitting"
+      ],
+      "capability_count": 2,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -3576,10 +4588,27 @@
         "dest_table_ddl",
         "partitioning_or_splitting"
       ],
+      "core_flags": [
+        "dest_table_ddl"
+      ],
+      "optional_flags": [
+        "partitioning_or_splitting"
+      ],
+      "optional_special": [
+        "partitioning_or_splitting"
+      ],
       "classification": "special",
       "classification_reasons": [
+        "dest_table_ddl"
+      ],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
         "dest_table_ddl",
         "partitioning_or_splitting"
+      ],
+      "capability_count": 0,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -3645,8 +4674,25 @@
         "openlineage",
         "replace"
       ],
-      "classification": "maps_cleanly",
-      "classification_reasons": []
+      "core_flags": [
+        "openlineage"
+      ],
+      "optional_flags": [
+        "replace"
+      ],
+      "optional_special": [],
+      "classification": "needs_capability",
+      "classification_reasons": [
+        "replace"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "replace"
+      ],
+      "capability_count": 1,
+      "unresolved_bases": [
+        "BaseOperator"
+      ]
     },
     {
       "provider": "google",
@@ -3741,9 +4787,22 @@
       "flags": [
         "compression"
       ],
+      "core_flags": [],
+      "optional_flags": [
+        "compression"
+      ],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
         "compression"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "compression"
+      ],
+      "capability_count": 1,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -3755,6 +4814,16 @@
       "dest_system": "gcs",
       "kind": "file→file",
       "constructor_args": [
+        {
+          "name": "file_system_name",
+          "default": null,
+          "annotation": "str"
+        },
+        {
+          "name": "path",
+          "default": null,
+          "annotation": "str"
+        },
         {
           "name": "src_adls",
           "default": null,
@@ -3801,7 +4870,10 @@
           "annotation": null
         }
       ],
-      "inherited_arg_names": [],
+      "inherited_arg_names": [
+        "file_system_name",
+        "path"
+      ],
       "template_fields": [
         "src_adls",
         "dest_gcs",
@@ -3823,9 +4895,25 @@
         "compression",
         "replace"
       ],
+      "core_flags": [],
+      "optional_flags": [
+        "compression",
+        "replace"
+      ],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
-        "compression"
+        "compression",
+        "replace"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "compression",
+        "replace"
+      ],
+      "capability_count": 2,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -3919,9 +5007,23 @@
         "compression",
         "openlineage"
       ],
+      "core_flags": [
+        "compression",
+        "openlineage"
+      ],
+      "optional_flags": [],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
         "compression"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "compression"
+      ],
+      "capability_count": 1,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -4019,9 +5121,28 @@
         "replace",
         "wildcard_or_prefix"
       ],
+      "core_flags": [],
+      "optional_flags": [
+        "compression",
+        "replace",
+        "wildcard_or_prefix"
+      ],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
-        "compression"
+        "compression",
+        "replace",
+        "wildcard_or_prefix"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "compression",
+        "replace",
+        "wildcard_or_prefix"
+      ],
+      "capability_count": 3,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -4121,9 +5242,24 @@
         "replace",
         "warehouse_job_options"
       ],
+      "core_flags": [
+        "openlineage",
+        "replace",
+        "warehouse_job_options"
+      ],
+      "optional_flags": [],
+      "optional_special": [],
       "classification": "special",
       "classification_reasons": [
         "warehouse_job_options"
+      ],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
+        "warehouse_job_options"
+      ],
+      "capability_count": 1,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -4265,10 +5401,28 @@
         "warehouse_copy_job",
         "warehouse_job_options"
       ],
+      "core_flags": [
+        "compression",
+        "deferrable",
+        "openlineage",
+        "warehouse_copy_job",
+        "warehouse_job_options"
+      ],
+      "optional_flags": [],
+      "optional_special": [],
       "classification": "special",
       "classification_reasons": [
         "warehouse_copy_job",
         "warehouse_job_options"
+      ],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
+        "warehouse_copy_job",
+        "warehouse_job_options"
+      ],
+      "capability_count": 2,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -4393,8 +5547,23 @@
       "flags": [
         "replace"
       ],
-      "classification": "maps_cleanly",
-      "classification_reasons": []
+      "core_flags": [],
+      "optional_flags": [
+        "replace"
+      ],
+      "optional_special": [],
+      "classification": "needs_capability",
+      "classification_reasons": [
+        "replace"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "replace"
+      ],
+      "capability_count": 1,
+      "unresolved_bases": [
+        "BaseOperator"
+      ]
     },
     {
       "provider": "google",
@@ -4508,8 +5677,23 @@
       "flags": [
         "replace"
       ],
-      "classification": "maps_cleanly",
-      "classification_reasons": []
+      "core_flags": [],
+      "optional_flags": [
+        "replace"
+      ],
+      "optional_special": [],
+      "classification": "needs_capability",
+      "classification_reasons": [
+        "replace"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "replace"
+      ],
+      "capability_count": 1,
+      "unresolved_bases": [
+        "BaseOperator"
+      ]
     },
     {
       "provider": "google",
@@ -4624,9 +5808,25 @@
         "replace",
         "upsert"
       ],
+      "core_flags": [],
+      "optional_flags": [
+        "replace",
+        "upsert"
+      ],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
+        "replace",
         "upsert"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "replace",
+        "upsert"
+      ],
+      "capability_count": 2,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -4726,8 +5926,25 @@
         "openlineage",
         "replace"
       ],
-      "classification": "maps_cleanly",
-      "classification_reasons": []
+      "core_flags": [
+        "openlineage"
+      ],
+      "optional_flags": [
+        "replace"
+      ],
+      "optional_special": [],
+      "classification": "needs_capability",
+      "classification_reasons": [
+        "replace"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "replace"
+      ],
+      "capability_count": 1,
+      "unresolved_bases": [
+        "BaseOperator"
+      ]
     },
     {
       "provider": "google",
@@ -4878,8 +6095,17 @@
         "execute"
       ],
       "flags": [],
+      "core_flags": [],
+      "optional_flags": [],
+      "optional_special": [],
       "classification": "maps_cleanly",
-      "classification_reasons": []
+      "classification_reasons": [],
+      "classification_conservative": "maps_cleanly",
+      "classification_conservative_reasons": [],
+      "capability_count": 0,
+      "unresolved_bases": [
+        "BaseOperator"
+      ]
     },
     {
       "provider": "google",
@@ -4991,9 +6217,25 @@
         "partitioning_or_splitting",
         "schema_sidecar"
       ],
+      "core_flags": [
+        "partitioning_or_splitting"
+      ],
+      "optional_flags": [
+        "compression",
+        "schema_sidecar"
+      ],
+      "optional_special": [],
       "classification": "special",
       "classification_reasons": [
         "partitioning_or_splitting"
+      ],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
+        "partitioning_or_splitting"
+      ],
+      "capability_count": 2,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -5087,9 +6329,22 @@
       "flags": [
         "compression"
       ],
+      "core_flags": [],
+      "optional_flags": [
+        "compression"
+      ],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
         "compression"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "compression"
+      ],
+      "capability_count": 1,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -5363,11 +6618,36 @@
         "warehouse_copy_job",
         "warehouse_job_options"
       ],
+      "core_flags": [
+        "compression",
+        "deferrable",
+        "openlineage",
+        "replace",
+        "warehouse_copy_job",
+        "warehouse_job_options"
+      ],
+      "optional_flags": [
+        "acl_or_extra_args",
+        "partitioning_or_splitting",
+        "schema_sidecar"
+      ],
+      "optional_special": [
+        "partitioning_or_splitting"
+      ],
       "classification": "special",
       "classification_reasons": [
+        "warehouse_copy_job",
+        "warehouse_job_options"
+      ],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
         "partitioning_or_splitting",
         "warehouse_copy_job",
         "warehouse_job_options"
+      ],
+      "capability_count": 5,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -5515,11 +6795,36 @@
         "replace",
         "wildcard_or_prefix"
       ],
+      "core_flags": [
+        "openlineage",
+        "replace"
+      ],
+      "optional_flags": [
+        "incremental_filter",
+        "move_semantics",
+        "object_retention",
+        "wildcard_or_prefix"
+      ],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
         "incremental_filter",
         "move_semantics",
-        "object_retention"
+        "object_retention",
+        "replace",
+        "wildcard_or_prefix"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "incremental_filter",
+        "move_semantics",
+        "object_retention",
+        "replace",
+        "wildcard_or_prefix"
+      ],
+      "capability_count": 5,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -5598,9 +6903,24 @@
         "openlineage",
         "xcom_side_channel"
       ],
+      "core_flags": [
+        "openlineage"
+      ],
+      "optional_flags": [
+        "xcom_side_channel"
+      ],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
         "xcom_side_channel"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "xcom_side_channel"
+      ],
+      "capability_count": 1,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -5692,10 +7012,27 @@
         "openlineage",
         "path_layout"
       ],
+      "core_flags": [
+        "openlineage",
+        "path_layout"
+      ],
+      "optional_flags": [
+        "move_semantics"
+      ],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
         "move_semantics",
         "path_layout"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "move_semantics",
+        "path_layout"
+      ],
+      "capability_count": 2,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -5769,8 +7106,17 @@
         "dry_run"
       ],
       "flags": [],
+      "core_flags": [],
+      "optional_flags": [],
+      "optional_special": [],
       "classification": "maps_cleanly",
-      "classification_reasons": []
+      "classification_reasons": [],
+      "classification_conservative": "maps_cleanly",
+      "classification_conservative_reasons": [],
+      "capability_count": 0,
+      "unresolved_bases": [
+        "BaseOperator"
+      ]
     },
     {
       "provider": "google",
@@ -5836,8 +7182,17 @@
         "execute"
       ],
       "flags": [],
+      "core_flags": [],
+      "optional_flags": [],
+      "optional_special": [],
       "classification": "maps_cleanly",
-      "classification_reasons": []
+      "classification_reasons": [],
+      "classification_conservative": "maps_cleanly",
+      "classification_conservative_reasons": [],
+      "capability_count": 0,
+      "unresolved_bases": [
+        "BaseOperator"
+      ]
     },
     {
       "provider": "google",
@@ -6003,9 +7358,22 @@
       "flags": [
         "compression"
       ],
+      "core_flags": [],
+      "optional_flags": [
+        "compression"
+      ],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
         "compression"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "compression"
+      ],
+      "capability_count": 1,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -6087,9 +7455,24 @@
         "compression",
         "openlineage"
       ],
+      "core_flags": [
+        "openlineage"
+      ],
+      "optional_flags": [
+        "compression"
+      ],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
         "compression"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "compression"
+      ],
+      "capability_count": 1,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -6284,9 +7667,25 @@
         "partitioning_or_splitting",
         "schema_sidecar"
       ],
+      "core_flags": [
+        "partitioning_or_splitting"
+      ],
+      "optional_flags": [
+        "compression",
+        "schema_sidecar"
+      ],
+      "optional_special": [],
       "classification": "special",
       "classification_reasons": [
         "partitioning_or_splitting"
+      ],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
+        "partitioning_or_splitting"
+      ],
+      "capability_count": 2,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -6463,9 +7862,26 @@
         "partitioning_or_splitting",
         "schema_sidecar"
       ],
+      "core_flags": [
+        "openlineage",
+        "partitioning_or_splitting"
+      ],
+      "optional_flags": [
+        "compression",
+        "schema_sidecar"
+      ],
+      "optional_special": [],
       "classification": "special",
       "classification_reasons": [
         "partitioning_or_splitting"
+      ],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
+        "partitioning_or_splitting"
+      ],
+      "capability_count": 2,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -6642,9 +8058,26 @@
         "partitioning_or_splitting",
         "schema_sidecar"
       ],
+      "core_flags": [
+        "openlineage",
+        "partitioning_or_splitting"
+      ],
+      "optional_flags": [
+        "compression",
+        "schema_sidecar"
+      ],
+      "optional_special": [],
       "classification": "special",
       "classification_reasons": [
         "partitioning_or_splitting"
+      ],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
+        "partitioning_or_splitting"
+      ],
+      "capability_count": 2,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -6821,9 +8254,26 @@
         "partitioning_or_splitting",
         "schema_sidecar"
       ],
+      "core_flags": [
+        "openlineage",
+        "partitioning_or_splitting"
+      ],
+      "optional_flags": [
+        "compression",
+        "schema_sidecar"
+      ],
+      "optional_special": [],
       "classification": "special",
       "classification_reasons": [
         "partitioning_or_splitting"
+      ],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
+        "partitioning_or_splitting"
+      ],
+      "capability_count": 2,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -7006,9 +8456,26 @@
         "partitioning_or_splitting",
         "schema_sidecar"
       ],
+      "core_flags": [
+        "openlineage",
+        "partitioning_or_splitting"
+      ],
+      "optional_flags": [
+        "compression",
+        "schema_sidecar"
+      ],
+      "optional_special": [],
       "classification": "special",
       "classification_reasons": [
         "partitioning_or_splitting"
+      ],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
+        "partitioning_or_splitting"
+      ],
+      "capability_count": 2,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -7175,9 +8642,25 @@
         "partitioning_or_splitting",
         "schema_sidecar"
       ],
+      "core_flags": [
+        "partitioning_or_splitting"
+      ],
+      "optional_flags": [
+        "compression",
+        "schema_sidecar"
+      ],
+      "optional_special": [],
       "classification": "special",
       "classification_reasons": [
         "partitioning_or_splitting"
+      ],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
+        "partitioning_or_splitting"
+      ],
+      "capability_count": 2,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -7189,6 +8672,26 @@
       "dest_system": "gcs",
       "kind": "file→file",
       "constructor_args": [
+        {
+          "name": "apply_wildcard",
+          "default": "False",
+          "annotation": "bool"
+        },
+        {
+          "name": "region_name",
+          "default": "None",
+          "annotation": "str | None"
+        },
+        {
+          "name": "botocore_config",
+          "default": "None",
+          "annotation": "dict | None"
+        },
+        {
+          "name": "region",
+          "default": "NOTSET",
+          "annotation": "str | None | ArgNotSet"
+        },
         {
           "name": "bucket",
           "default": null,
@@ -7265,7 +8768,12 @@
           "annotation": null
         }
       ],
-      "inherited_arg_names": [],
+      "inherited_arg_names": [
+        "apply_wildcard",
+        "region_name",
+        "botocore_config",
+        "region"
+      ],
       "template_fields": [
         "bucket",
         "prefix",
@@ -7308,12 +8816,40 @@
         "server_side_copy",
         "wildcard_or_prefix"
       ],
+      "core_flags": [
+        "deferrable",
+        "openlineage",
+        "server_side_copy"
+      ],
+      "optional_flags": [
+        "compression",
+        "path_layout",
+        "replace",
+        "wildcard_or_prefix"
+      ],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
         "compression",
         "deferrable",
         "path_layout",
-        "server_side_copy"
+        "replace",
+        "server_side_copy",
+        "wildcard_or_prefix"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "compression",
+        "deferrable",
+        "path_layout",
+        "replace",
+        "server_side_copy",
+        "wildcard_or_prefix"
+      ],
+      "capability_count": 6,
+      "unresolved_bases": [
+        "BaseOperator",
+        "AwsBaseHookMixin"
       ]
     },
     {
@@ -7411,9 +8947,22 @@
       "flags": [
         "compression"
       ],
+      "core_flags": [],
+      "optional_flags": [
+        "compression"
+      ],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
         "compression"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "compression"
+      ],
+      "capability_count": 1,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -7521,10 +9070,27 @@
         "move_semantics",
         "openlineage"
       ],
+      "core_flags": [
+        "openlineage"
+      ],
+      "optional_flags": [
+        "compression",
+        "move_semantics"
+      ],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
         "compression",
         "move_semantics"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "compression",
+        "move_semantics"
+      ],
+      "capability_count": 2,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -7597,8 +9163,17 @@
         "execute"
       ],
       "flags": [],
+      "core_flags": [],
+      "optional_flags": [],
+      "optional_special": [],
       "classification": "maps_cleanly",
-      "classification_reasons": []
+      "classification_reasons": [],
+      "classification_conservative": "maps_cleanly",
+      "classification_conservative_reasons": [],
+      "capability_count": 0,
+      "unresolved_bases": [
+        "BaseOperator"
+      ]
     },
     {
       "provider": "google",
@@ -7751,9 +9326,25 @@
         "partitioning_or_splitting",
         "schema_sidecar"
       ],
+      "core_flags": [
+        "partitioning_or_splitting"
+      ],
+      "optional_flags": [
+        "compression",
+        "schema_sidecar"
+      ],
+      "optional_special": [],
       "classification": "special",
       "classification_reasons": [
         "partitioning_or_splitting"
+      ],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
+        "partitioning_or_splitting"
+      ],
+      "capability_count": 2,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -7925,9 +9516,26 @@
         "partitioning_or_splitting",
         "schema_sidecar"
       ],
+      "core_flags": [
+        "openlineage",
+        "partitioning_or_splitting"
+      ],
+      "optional_flags": [
+        "compression",
+        "schema_sidecar"
+      ],
+      "optional_special": [],
       "classification": "special",
       "classification_reasons": [
         "partitioning_or_splitting"
+      ],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
+        "partitioning_or_splitting"
+      ],
+      "capability_count": 2,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -8002,9 +9610,22 @@
       "flags": [
         "move_semantics"
       ],
+      "core_flags": [],
+      "optional_flags": [
+        "move_semantics"
+      ],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
         "move_semantics"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "move_semantics"
+      ],
+      "capability_count": 1,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -8071,8 +9692,17 @@
         "execute"
       ],
       "flags": [],
+      "core_flags": [],
+      "optional_flags": [],
+      "optional_special": [],
       "classification": "maps_cleanly",
-      "classification_reasons": []
+      "classification_reasons": [],
+      "classification_conservative": "maps_cleanly",
+      "classification_conservative_reasons": [],
+      "capability_count": 0,
+      "unresolved_bases": [
+        "BaseOperator"
+      ]
     },
     {
       "provider": "google",
@@ -8157,9 +9787,22 @@
       "flags": [
         "move_semantics"
       ],
+      "core_flags": [
+        "move_semantics"
+      ],
+      "optional_flags": [],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
         "move_semantics"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "move_semantics"
+      ],
+      "capability_count": 1,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -8171,6 +9814,21 @@
       "dest_system": "sheets",
       "kind": "sql→record",
       "constructor_args": [
+        {
+          "name": "conn_id",
+          "default": "None",
+          "annotation": "str | None"
+        },
+        {
+          "name": "hook_params",
+          "default": "None",
+          "annotation": "dict | None"
+        },
+        {
+          "name": "retry_on_failure",
+          "default": "True",
+          "annotation": "bool"
+        },
         {
           "name": "sql",
           "default": null,
@@ -8217,7 +9875,11 @@
           "annotation": null
         }
       ],
-      "inherited_arg_names": [],
+      "inherited_arg_names": [
+        "conn_id",
+        "hook_params",
+        "retry_on_failure"
+      ],
       "template_fields": [
         "sql",
         "spreadsheet_id",
@@ -8238,8 +9900,17 @@
         "execute"
       ],
       "flags": [],
+      "core_flags": [],
+      "optional_flags": [],
+      "optional_special": [],
       "classification": "maps_cleanly",
-      "classification_reasons": []
+      "classification_reasons": [],
+      "classification_conservative": "maps_cleanly",
+      "classification_conservative_reasons": [],
+      "capability_count": 0,
+      "unresolved_bases": [
+        "BaseOperator"
+      ]
     },
     {
       "provider": "microsoft.azure",
@@ -8353,9 +10024,30 @@
         "replace",
         "wildcard_or_prefix"
       ],
+      "core_flags": [
+        "openlineage",
+        "path_layout"
+      ],
+      "optional_flags": [
+        "replace",
+        "wildcard_or_prefix"
+      ],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
-        "path_layout"
+        "path_layout",
+        "replace",
+        "wildcard_or_prefix"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "path_layout",
+        "replace",
+        "wildcard_or_prefix"
+      ],
+      "capability_count": 3,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -8432,9 +10124,26 @@
         "acl_or_extra_args",
         "replace"
       ],
+      "core_flags": [
+        "replace"
+      ],
+      "optional_flags": [
+        "acl_or_extra_args"
+      ],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
-        "acl_or_extra_args"
+        "acl_or_extra_args",
+        "replace"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "acl_or_extra_args",
+        "replace"
+      ],
+      "capability_count": 2,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -8501,9 +10210,22 @@
       "flags": [
         "acl_or_extra_args"
       ],
+      "core_flags": [],
+      "optional_flags": [
+        "acl_or_extra_args"
+      ],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
         "acl_or_extra_args"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "acl_or_extra_args"
+      ],
+      "capability_count": 1,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -8590,8 +10312,17 @@
         "execute"
       ],
       "flags": [],
+      "core_flags": [],
+      "optional_flags": [],
+      "optional_special": [],
       "classification": "maps_cleanly",
-      "classification_reasons": []
+      "classification_reasons": [],
+      "classification_conservative": "maps_cleanly",
+      "classification_conservative_reasons": [],
+      "capability_count": 0,
+      "unresolved_bases": [
+        "BaseOperator"
+      ]
     },
     {
       "provider": "microsoft.azure",
@@ -8704,9 +10435,28 @@
         "replace",
         "wildcard_or_prefix"
       ],
+      "core_flags": [],
+      "optional_flags": [
+        "acl_or_extra_args",
+        "replace",
+        "wildcard_or_prefix"
+      ],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
-        "acl_or_extra_args"
+        "acl_or_extra_args",
+        "replace",
+        "wildcard_or_prefix"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "acl_or_extra_args",
+        "replace",
+        "wildcard_or_prefix"
+      ],
+      "capability_count": 3,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -8801,10 +10551,31 @@
         "replace",
         "wildcard_or_prefix"
       ],
+      "core_flags": [],
+      "optional_flags": [
+        "acl_or_extra_args",
+        "move_semantics",
+        "replace",
+        "wildcard_or_prefix"
+      ],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
         "acl_or_extra_args",
-        "move_semantics"
+        "move_semantics",
+        "replace",
+        "wildcard_or_prefix"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "acl_or_extra_args",
+        "move_semantics",
+        "replace",
+        "wildcard_or_prefix"
+      ],
+      "capability_count": 4,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -8867,9 +10638,22 @@
       "flags": [
         "pre_post_operator_sql"
       ],
-      "classification": "special",
-      "classification_reasons": [
+      "core_flags": [],
+      "optional_flags": [
         "pre_post_operator_sql"
+      ],
+      "optional_special": [
+        "pre_post_operator_sql"
+      ],
+      "classification": "maps_cleanly",
+      "classification_reasons": [],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
+        "pre_post_operator_sql"
+      ],
+      "capability_count": 0,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -8942,10 +10726,26 @@
         "bulk_load",
         "upsert"
       ],
+      "core_flags": [
+        "upsert"
+      ],
+      "optional_flags": [
+        "bulk_load"
+      ],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
         "bulk_load",
         "upsert"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "bulk_load",
+        "upsert"
+      ],
+      "capability_count": 2,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -9008,9 +10808,22 @@
       "flags": [
         "pre_post_operator_sql"
       ],
-      "classification": "special",
-      "classification_reasons": [
+      "core_flags": [],
+      "optional_flags": [
         "pre_post_operator_sql"
+      ],
+      "optional_special": [
+        "pre_post_operator_sql"
+      ],
+      "classification": "maps_cleanly",
+      "classification_reasons": [],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
+        "pre_post_operator_sql"
+      ],
+      "capability_count": 0,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -9093,9 +10906,25 @@
         "bulk_load",
         "pre_post_operator_sql"
       ],
-      "classification": "special",
-      "classification_reasons": [
+      "core_flags": [],
+      "optional_flags": [
+        "bulk_load",
         "pre_post_operator_sql"
+      ],
+      "optional_special": [
+        "pre_post_operator_sql"
+      ],
+      "classification": "needs_capability",
+      "classification_reasons": [
+        "bulk_load"
+      ],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
+        "pre_post_operator_sql"
+      ],
+      "capability_count": 1,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -9161,8 +10990,17 @@
         "execute"
       ],
       "flags": [],
+      "core_flags": [],
+      "optional_flags": [],
+      "optional_special": [],
       "classification": "maps_cleanly",
-      "classification_reasons": []
+      "classification_reasons": [],
+      "classification_conservative": "maps_cleanly",
+      "classification_conservative_reasons": [],
+      "capability_count": 0,
+      "unresolved_bases": [
+        "BaseOperator"
+      ]
     },
     {
       "provider": "presto",
@@ -9239,9 +11077,22 @@
       "flags": [
         "schema_sidecar"
       ],
+      "core_flags": [],
+      "optional_flags": [
+        "schema_sidecar"
+      ],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
         "schema_sidecar"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "schema_sidecar"
+      ],
+      "capability_count": 1,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -9328,10 +11179,26 @@
         "move_semantics",
         "path_layout"
       ],
+      "core_flags": [
+        "path_layout"
+      ],
+      "optional_flags": [
+        "move_semantics"
+      ],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
         "move_semantics",
         "path_layout"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "move_semantics",
+        "path_layout"
+      ],
+      "capability_count": 2,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -9401,9 +11268,22 @@
       "flags": [
         "notification"
       ],
+      "core_flags": [
+        "notification"
+      ],
+      "optional_flags": [],
+      "optional_special": [],
       "classification": "special",
       "classification_reasons": [
         "notification"
+      ],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
+        "notification"
+      ],
+      "capability_count": 0,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -9528,9 +11408,22 @@
       "flags": [
         "notification"
       ],
+      "core_flags": [
+        "notification"
+      ],
+      "optional_flags": [],
+      "optional_special": [],
       "classification": "special",
       "classification_reasons": [
         "notification"
+      ],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
+        "notification"
+      ],
+      "capability_count": 0,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -9629,9 +11522,22 @@
       "flags": [
         "notification"
       ],
+      "core_flags": [
+        "notification"
+      ],
+      "optional_flags": [],
+      "optional_special": [],
       "classification": "special",
       "classification_reasons": [
         "notification"
+      ],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
+        "notification"
+      ],
+      "capability_count": 0,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -9758,10 +11664,28 @@
         "warehouse_job_options",
         "wildcard_or_prefix"
       ],
+      "core_flags": [
+        "openlineage",
+        "warehouse_copy_job",
+        "warehouse_job_options"
+      ],
+      "optional_flags": [
+        "wildcard_or_prefix"
+      ],
+      "optional_special": [],
       "classification": "special",
       "classification_reasons": [
         "warehouse_copy_job",
         "warehouse_job_options"
+      ],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
+        "warehouse_copy_job",
+        "warehouse_job_options"
+      ],
+      "capability_count": 1,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -9829,10 +11753,27 @@
         "teradata_nos_auth",
         "warehouse_copy_job"
       ],
+      "core_flags": [
+        "warehouse_copy_job"
+      ],
+      "optional_flags": [
+        "teradata_nos_auth"
+      ],
+      "optional_special": [
+        "teradata_nos_auth"
+      ],
       "classification": "special",
       "classification_reasons": [
+        "warehouse_copy_job"
+      ],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
         "teradata_nos_auth",
         "warehouse_copy_job"
+      ],
+      "capability_count": 0,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -9900,10 +11841,27 @@
         "teradata_nos_auth",
         "warehouse_copy_job"
       ],
+      "core_flags": [
+        "warehouse_copy_job"
+      ],
+      "optional_flags": [
+        "teradata_nos_auth"
+      ],
+      "optional_special": [
+        "teradata_nos_auth"
+      ],
       "classification": "special",
       "classification_reasons": [
+        "warehouse_copy_job"
+      ],
+      "classification_conservative": "special",
+      "classification_conservative_reasons": [
         "teradata_nos_auth",
         "warehouse_copy_job"
+      ],
+      "capability_count": 0,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     },
     {
@@ -9970,8 +11928,17 @@
         "execute"
       ],
       "flags": [],
+      "core_flags": [],
+      "optional_flags": [],
+      "optional_special": [],
       "classification": "maps_cleanly",
-      "classification_reasons": []
+      "classification_reasons": [],
+      "classification_conservative": "maps_cleanly",
+      "classification_conservative_reasons": [],
+      "capability_count": 0,
+      "unresolved_bases": [
+        "BaseOperator"
+      ]
     },
     {
       "provider": "trino",
@@ -10048,9 +12015,22 @@
       "flags": [
         "schema_sidecar"
       ],
+      "core_flags": [],
+      "optional_flags": [
+        "schema_sidecar"
+      ],
+      "optional_special": [],
       "classification": "needs_capability",
       "classification_reasons": [
         "schema_sidecar"
+      ],
+      "classification_conservative": "needs_capability",
+      "classification_conservative_reasons": [
+        "schema_sidecar"
+      ],
+      "capability_count": 1,
+      "unresolved_bases": [
+        "BaseOperator"
       ]
     }
   ]

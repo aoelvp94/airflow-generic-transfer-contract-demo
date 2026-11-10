@@ -1,0 +1,264 @@
+{
+  "source_csv": "/workspace/airflow-generic-transfer-contract-demo/bench-out/PAIR_AUDIT.csv",
+  "needs_capability_operators": 43,
+  "need_gte_4_capabilities": 9,
+  "sole_blocker": [
+    {
+      "capability": "compression",
+      "count": 7,
+      "operators": [
+        "GlacierToGCSOperator",
+        "GoogleAdsToGcsOperator",
+        "AzureBlobStorageToGCSOperator",
+        "FacebookAdsReportToGcsOperator",
+        "HttpToGCSOperator",
+        "LocalFilesystemToGCSOperator",
+        "SalesforceToGcsOperator"
+      ]
+    },
+    {
+      "capability": "replace",
+      "count": 4,
+      "operators": [
+        "ImapAttachmentToS3Operator",
+        "FileTransferOperator",
+        "BigQueryToMsSqlOperator",
+        "BigQueryToMySqlOperator"
+      ]
+    },
+    {
+      "capability": "bulk_load",
+      "count": 2,
+      "operators": [
+        "HiveToMySqlOperator",
+        "VerticaToMySqlOperator"
+      ]
+    },
+    {
+      "capability": "move_semantics",
+      "count": 2,
+      "operators": [
+        "GCSToGoogleDriveOperator",
+        "LocalFilesystemToGoogleDriveOperator"
+      ]
+    },
+    {
+      "capability": "schema_sidecar",
+      "count": 2,
+      "operators": [
+        "GCSToPrestoOperator",
+        "GCSToTrinoOperator"
+      ]
+    },
+    {
+      "capability": "xcom_side_channel",
+      "count": 1,
+      "operators": [
+        "GCSToLocalFilesystemOperator"
+      ]
+    },
+    {
+      "capability": "acl_or_extra_args",
+      "count": 1,
+      "operators": [
+        "LocalFilesystemToWasbOperator"
+      ]
+    }
+  ],
+  "total_any": [
+    {
+      "capability": "replace",
+      "count": 24
+    },
+    {
+      "capability": "compression",
+      "count": 17
+    },
+    {
+      "capability": "acl_or_extra_args",
+      "count": 12
+    },
+    {
+      "capability": "wildcard_or_prefix",
+      "count": 8
+    },
+    {
+      "capability": "move_semantics",
+      "count": 7
+    },
+    {
+      "capability": "dest_encryption",
+      "count": 6
+    },
+    {
+      "capability": "path_layout",
+      "count": 5
+    },
+    {
+      "capability": "bulk_load",
+      "count": 3
+    },
+    {
+      "capability": "pagination",
+      "count": 2
+    },
+    {
+      "capability": "xcom_side_channel",
+      "count": 2
+    },
+    {
+      "capability": "upsert",
+      "count": 2
+    },
+    {
+      "capability": "schema_sidecar",
+      "count": 2
+    },
+    {
+      "capability": "incremental_filter",
+      "count": 1
+    },
+    {
+      "capability": "object_retention",
+      "count": 1
+    },
+    {
+      "capability": "deferrable",
+      "count": 1
+    },
+    {
+      "capability": "server_side_copy",
+      "count": 1
+    }
+  ],
+  "greedy_set_cover": [
+    {
+      "step": 1,
+      "capability": "compression",
+      "newly_unlocked": 7,
+      "also_present_in_remaining_before": 17,
+      "cumulative_unlocked": 7,
+      "remaining": 36
+    },
+    {
+      "step": 2,
+      "capability": "replace",
+      "newly_unlocked": 6,
+      "also_present_in_remaining_before": 24,
+      "cumulative_unlocked": 13,
+      "remaining": 30
+    },
+    {
+      "step": 3,
+      "capability": "move_semantics",
+      "newly_unlocked": 3,
+      "also_present_in_remaining_before": 7,
+      "cumulative_unlocked": 16,
+      "remaining": 27
+    },
+    {
+      "step": 4,
+      "capability": "acl_or_extra_args",
+      "newly_unlocked": 2,
+      "also_present_in_remaining_before": 12,
+      "cumulative_unlocked": 18,
+      "remaining": 25
+    },
+    {
+      "step": 5,
+      "capability": "dest_encryption",
+      "newly_unlocked": 6,
+      "also_present_in_remaining_before": 6,
+      "cumulative_unlocked": 24,
+      "remaining": 19
+    },
+    {
+      "step": 6,
+      "capability": "wildcard_or_prefix",
+      "newly_unlocked": 4,
+      "also_present_in_remaining_before": 8,
+      "cumulative_unlocked": 28,
+      "remaining": 15
+    },
+    {
+      "step": 7,
+      "capability": "path_layout",
+      "newly_unlocked": 4,
+      "also_present_in_remaining_before": 5,
+      "cumulative_unlocked": 32,
+      "remaining": 11
+    },
+    {
+      "step": 8,
+      "capability": "bulk_load",
+      "newly_unlocked": 2,
+      "also_present_in_remaining_before": 3,
+      "cumulative_unlocked": 34,
+      "remaining": 9
+    },
+    {
+      "step": 9,
+      "capability": "schema_sidecar",
+      "newly_unlocked": 2,
+      "also_present_in_remaining_before": 2,
+      "cumulative_unlocked": 36,
+      "remaining": 7
+    },
+    {
+      "step": 10,
+      "capability": "upsert",
+      "newly_unlocked": 2,
+      "also_present_in_remaining_before": 2,
+      "cumulative_unlocked": 38,
+      "remaining": 5
+    },
+    {
+      "step": 11,
+      "capability": "pagination",
+      "newly_unlocked": 1,
+      "also_present_in_remaining_before": 2,
+      "cumulative_unlocked": 39,
+      "remaining": 4
+    },
+    {
+      "step": 12,
+      "capability": "xcom_side_channel",
+      "newly_unlocked": 2,
+      "also_present_in_remaining_before": 2,
+      "cumulative_unlocked": 41,
+      "remaining": 2
+    },
+    {
+      "step": 13,
+      "capability": "deferrable",
+      "newly_unlocked": 0,
+      "also_present_in_remaining_before": 1,
+      "cumulative_unlocked": 41,
+      "remaining": 2
+    },
+    {
+      "step": 14,
+      "capability": "server_side_copy",
+      "newly_unlocked": 1,
+      "also_present_in_remaining_before": 1,
+      "cumulative_unlocked": 42,
+      "remaining": 1
+    },
+    {
+      "step": 15,
+      "capability": "incremental_filter",
+      "newly_unlocked": 0,
+      "also_present_in_remaining_before": 1,
+      "cumulative_unlocked": 42,
+      "remaining": 1
+    },
+    {
+      "step": 16,
+      "capability": "object_retention",
+      "newly_unlocked": 1,
+      "also_present_in_remaining_before": 1,
+      "cumulative_unlocked": 43,
+      "remaining": 0
+    }
+  ]
+}

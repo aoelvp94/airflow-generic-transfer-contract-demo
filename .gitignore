@@ -39,3 +39,5 @@ bench-out/*
 bench-out/*.partial.json
 !bench-out/PAIR_AUDIT.csv
 !bench-out/PAIR_AUDIT.json
+!bench-out/CAPABILITY_RANK.md
+!bench-out/CAPABILITY_RANK.json

@@ -1,5 +1,5 @@
 # Mirror of justfile targets for reviewers without `just`.
-.PHONY: audit install up down status test test-integration test-all bench bench-emulators bench-scale bench-scale-quick bench-scale-fresh profile-listing probe-emulators bench-adbc e2e check reproduce
+.PHONY: audit rank-capabilities install up down status test test-integration test-all bench bench-emulators bench-scale bench-scale-quick bench-scale-fresh profile-listing probe-emulators bench-adbc e2e check reproduce
 
 install:
 	uv venv .venv
@@ -58,6 +58,9 @@ bench-adbc:
 # Requires a clone at $AIRFLOW_SRC or /workspace/airflow-src (providers/ is enough).
 audit:
 	.venv/bin/python scripts/audit_transfers.py
+
+rank-capabilities:
+	.venv/bin/python scripts/rank_capabilities.py
 
 e2e: up test-all bench bench-emulators bench-scale-quick bench-adbc
 
