@@ -45,6 +45,6 @@ bench-out/*.partial.json
 # GCS/S3/Azure shim experiment artifacts (do not commit venvs or emulator state)
 experiments/*/.venv/
 experiments/*/.airflow-home/
-experiments/*/pytest-junit.xml
+experiments/*/pytest-*.xml
 experiments/*/.pytest_cache/
 experiments/*/parity-results.json
