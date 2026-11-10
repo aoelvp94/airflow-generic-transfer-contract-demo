@@ -83,3 +83,99 @@ check: test bench
 
 reproduce: install e2e
     @echo "Results in bench-out/ (BENCH.md, BENCH_SCALE_QUICK.md, BENCH_ADBC.md). Full scale run: just bench-scale-fresh"
+
+
+# Unmodified upstream S3CopyObject + S3CopyPrefix unit tests against the file-contract shims.
+# Reuses the experiment venv. No emulators. 3-minute timeout.
+experiment-s3-copy:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ -z "${DOCKER_HOST:-}" && ! -S /var/run/docker.sock ]]; then
+        if curl -sf --connect-timeout 1 http://127.0.0.1:2375/version >/dev/null 2>&1; then
+            export DOCKER_HOST=tcp://127.0.0.1:2375
+        fi
+    fi
+    VENV="experiments/gcs_to_gcs_shim/.venv/bin/python"
+    AIRFLOW_SRC="${AIRFLOW_SRC:-/workspace/airflow-src}"
+    timeout 180 env AIRFLOW_SRC="$AIRFLOW_SRC" "$VENV" experiments/s3_copy_shim/run_upstream.py
+
+# Unmodified upstream LocalFilesystemToWasb + S3ToAzureBlobStorage unit tests against the shims.
+experiment-azure-copy:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ -z "${DOCKER_HOST:-}" && ! -S /var/run/docker.sock ]]; then
+        if curl -sf --connect-timeout 1 http://127.0.0.1:2375/version >/dev/null 2>&1; then
+            export DOCKER_HOST=tcp://127.0.0.1:2375
+        fi
+    fi
+    VENV="experiments/gcs_to_gcs_shim/.venv/bin/python"
+    AIRFLOW_SRC="${AIRFLOW_SRC:-/workspace/airflow-src}"
+    timeout 180 env AIRFLOW_SRC="$AIRFLOW_SRC" "$VENV" experiments/azure_copy_shim/run_upstream.py
+
+
+# S3Mock parity for S3 copy shims. Starts only s3 if needed; stops only what it started.
+experiment-s3-parity:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ -z "${DOCKER_HOST:-}" && ! -S /var/run/docker.sock ]]; then
+        if curl -sf --connect-timeout 1 http://127.0.0.1:2375/version >/dev/null 2>&1; then
+            export DOCKER_HOST=tcp://127.0.0.1:2375
+        fi
+    fi
+    VENV="experiments/gcs_to_gcs_shim/.venv/bin/python"
+    STARTED=0
+    if ! curl -s -o /dev/null -w '' --connect-timeout 1 http://127.0.0.1:19090/ && ! curl -s -o /dev/null -w '%{http_code}' --connect-timeout 1 http://127.0.0.1:19090/ | grep -qE '^[12345]'; then
+        docker compose -f docker-compose.yml up -d s3
+        STARTED=1
+        for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 1 http://127.0.0.1:19090/ || true)
+            if [[ "$code" =~ ^[12345][0-9][0-9]$ ]]; then break; fi
+            sleep 0.5
+        done
+    fi
+    set +e
+    timeout 180 env AIRFLOW_SRC="${AIRFLOW_SRC:-/workspace/airflow-src}" "$VENV" experiments/s3_copy_shim/parity.py
+    RC=$?
+    set -e
+    if [ "$STARTED" = "1" ]; then docker compose -f docker-compose.yml stop s3; fi
+    exit $RC
+
+# Azurite (+ S3Mock for S3ToWasb) parity. Starts only s3+azure if needed; stops only what it started.
+experiment-azure-parity:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ -z "${DOCKER_HOST:-}" && ! -S /var/run/docker.sock ]]; then
+        if curl -sf --connect-timeout 1 http://127.0.0.1:2375/version >/dev/null 2>&1; then
+            export DOCKER_HOST=tcp://127.0.0.1:2375
+        fi
+    fi
+    VENV="experiments/gcs_to_gcs_shim/.venv/bin/python"
+    STARTED_S3=0
+    STARTED_AZ=0
+    code=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 1 http://127.0.0.1:19090/ || true)
+    if ! [[ "$code" =~ ^[12345][0-9][0-9]$ ]]; then
+        docker compose -f docker-compose.yml up -d s3
+        STARTED_S3=1
+        for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 1 http://127.0.0.1:19090/ || true)
+            if [[ "$code" =~ ^[12345][0-9][0-9]$ ]]; then break; fi
+            sleep 0.5
+        done
+    fi
+    code=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 1 http://127.0.0.1:10000/ || true)
+    if ! [[ "$code" =~ ^[12345][0-9][0-9]$ ]]; then
+        docker compose -f docker-compose.yml up -d azure
+        STARTED_AZ=1
+        for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 1 http://127.0.0.1:10000/ || true)
+            if [[ "$code" =~ ^[12345][0-9][0-9]$ ]]; then break; fi
+            sleep 0.5
+        done
+    fi
+    set +e
+    timeout 180 env AIRFLOW_SRC="${AIRFLOW_SRC:-/workspace/airflow-src}" "$VENV" experiments/azure_copy_shim/parity.py
+    RC=$?
+    set -e
+    if [ "$STARTED_S3" = "1" ]; then docker compose -f docker-compose.yml stop s3; fi
+    if [ "$STARTED_AZ" = "1" ]; then docker compose -f docker-compose.yml stop azure; fi
+    exit $RC

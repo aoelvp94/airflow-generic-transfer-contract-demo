@@ -47,3 +47,4 @@ experiments/*/.venv/
 experiments/*/.airflow-home/
 experiments/*/pytest-junit.xml
 experiments/*/.pytest_cache/
+experiments/*/parity-results.json

@@ -1,5 +1,5 @@
 # Mirror of justfile targets for reviewers without `just`.
-.PHONY: audit rank-capabilities experiment-gcs-to-gcs install up down status test test-integration test-all bench bench-emulators bench-scale bench-scale-quick bench-scale-fresh profile-listing probe-emulators bench-adbc e2e check reproduce
+.PHONY: audit rank-capabilities experiment-gcs-to-gcs experiment-s3-copy experiment-azure-copy install up down status test test-integration test-all bench bench-emulators bench-scale bench-scale-quick bench-scale-fresh profile-listing probe-emulators bench-adbc e2e check reproduce
 
 install:
 	uv venv .venv
@@ -75,3 +75,9 @@ check: test bench
 
 reproduce: install e2e
 	@echo "Results in bench-out/ (BENCH.md, BENCH_SCALE_QUICK.md, BENCH_ADBC.md). Full scale run: just bench-scale-fresh"
+
+experiment-s3-copy:
+	timeout 180 env AIRFLOW_SRC="$${AIRFLOW_SRC:-/workspace/airflow-src}" experiments/gcs_to_gcs_shim/.venv/bin/python experiments/s3_copy_shim/run_upstream.py
+
+experiment-azure-copy:
+	timeout 180 env AIRFLOW_SRC="$${AIRFLOW_SRC:-/workspace/airflow-src}" experiments/gcs_to_gcs_shim/.venv/bin/python experiments/azure_copy_shim/run_upstream.py
