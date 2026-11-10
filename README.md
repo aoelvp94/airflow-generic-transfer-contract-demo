@@ -47,7 +47,7 @@ just reproduce
 
 Expected:
 
-- `just test-all` → **47 passed** (33 unit + 14 integration).
+- `just test-all` → **59 passed** (39 unit + 20 integration).
 - `just bench` → stock HttpToS3-style keeps page 1 (10/25); generic lands 25/25.
 - `just bench-emulators` → naive 4 objects / ~9 req; generic 2 / ~5 (marker tree).
 - `just bench-scale-quick` → large/small/mixed/server-side/latency → `bench-out/BENCH_SCALE.md`.
@@ -99,17 +99,83 @@ contains `;`).
 | Per-pair vs generic behaviour parity (files) | All 6 ordered pairs (S3↔GCS↔Azure) pass the same generic copy assertions. | `just up && just test-integration` |
 | Per-pair vs generic request counts | Naive ≈ 9 req; generic ≈ 5 on the marker tree. | `just bench-emulators` |
 | fsspec marker behaviour differs by backend | gcsfs keeps trailing-slash markers; adlfs drops walked prefix / keeps nested without slash; s3fs varies. Shared helper collapses all three. | `just bench-emulators` / `test_fsspec_find_differs_on_markers` |
-| Request count dominates under real RTT | Latency demo injects 25 ms/req; wall time tracks request_total (naive 9 vs generic 5). | `just bench-scale-quick` → latency_demo |
-| Parallelism is a param, not a new operator | `workers=4/8/16` on `FileCopyable.copy_files`. | `just bench-scale` |
-| Same-provider server-side copy | S3 `copy_object` / GCS `copy_blob` / Azure `start_copy_from_url` vs read+write. | `just bench-scale` → server_side |
+| Request count dominates under real RTT | 20 ms injected before every HTTP request, 200 objects: generic sequential ≈ naive (~10 s, ~401 vs ~411 req); per-key listing ~2× slower; `workers=16` ~1.1–1.8 s. | `just bench-scale` → wire_latency |
+| Parallelism is a param, not a new operator | `workers=4/8/16` on `FileCopyable.copy_files`. On 1000 objects, `workers=16` cuts sequential time by ~25–40%. | `just bench-scale` |
+| Same-provider server-side copy | S3 `copy_object` / GCS `copy_blob` / Azure `start_copy_from_url` vs read+write. After sharing the listing helper and caching the SDK client, server-side is faster (3–4 HTTP vs 5–6) and copies the same two files; markers are filtered, not reported as skipped. | `just bench-scale` → server_side |
 | Lineage / discoverability / deferrable | Optional Protocols + tests; async sketch with asyncio. | `just test -k open_points` |
 | File copy ≠ record batches | `FileCopyable` + `GenericFileTransfer`; `write_batches` shim kept for compat. | `just test -k file_copyable` |
 | Arrow/ADBC fits the Protocol | `AdbcSqliteSource/Sink` stream `RecordBatch` through `GenericRecordTransfer`. | `just test -k adbc` / `just bench-adbc` |
 | Some operators stay out of wave one | Partitioning / schema JSON / format-specific pairs deferred. | [`docs/first-wave-exclusions.md`](docs/first-wave-exclusions.md) |
+| Generic looked slower than naive only on Azure sources | Two measurement bugs + the per-key HEAD listing, not an Azure/adlfs issue. After the fix, generic sequential matches naive on all six pairs at 1000 objects. | [`docs/AZURE_SLOWDOWN.md`](docs/AZURE_SLOWDOWN.md) / `just bench-scale` |
 
 Committed snapshots: [`bench-out/BENCH.md`](bench-out/BENCH.md),
 [`bench-out/BENCH_SCALE.md`](bench-out/BENCH_SCALE.md),
 [`bench-out/BENCH_ADBC.md`](bench-out/BENCH_ADBC.md).
+Azure listing write-up: [`docs/AZURE_SLOWDOWN.md`](docs/AZURE_SLOWDOWN.md).
+
+## Full-scale results
+
+5 rounds on localhost emulators, 2026-11-10 (started 11:30 Asia/Yerevan, wall 62.5 min).
+1000 × 4 KiB objects / 100 MiB large object / 200 objects at 20 ms/request.
+Medians below; max is the slowest of the 5 rounds. Full tables: [`bench-out/BENCH_SCALE.md`](bench-out/BENCH_SCALE.md).
+
+Localhost times are client and emulator CPU, not cloud RTT. Use `wire_latency` for the request-count argument.
+
+### `small_objects` — generic sequential vs naive (median and max, seconds)
+
+| Pair | naive med (max) | generic seq med (max) | generic par_16 med (max) |
+|---|---:|---:|---:|
+| `s3->gcs` | 8.361 (8.638) | 8.772 (8.923) | 6.381 (6.414) |
+| `gcs->s3` | 8.701 (8.952) | 7.255 (7.637) | 5.145 (7.277) |
+| `s3->azure` | 13.693 (14.220) | 13.311 (14.164) | 8.268 (8.412) |
+| `azure->s3` | 12.872 (13.470) | 12.456 (12.668) | 8.612 (9.125) |
+| `gcs->azure` | 10.063 (10.339) | 9.053 (9.302) | 5.769 (6.038) |
+| `azure->gcs` | 10.220 (11.280) | 10.576 (10.769) | 7.410 (7.525) |
+
+Generic sequential HTTP: 2002 (1000 objects). Naive: 2024–2034 (1011 objects, keeps markers).
+
+### `mixed_tree` — generic sequential vs naive (median, seconds)
+
+| Pair | naive | generic seq | generic par_16 |
+|---|---:|---:|---:|
+| `s3->gcs` | 0.079 | 0.041 | 0.033 |
+| `gcs->s3` | 0.062 | 0.033 | 0.024 |
+| `s3->azure` | 0.095 | 0.060 | 0.047 |
+| `azure->s3` | 0.097 | 0.062 | 0.050 |
+| `gcs->azure` | 0.067 | 0.038 | 0.029 |
+| `azure->gcs` | 0.077 | 0.048 | 0.043 |
+
+### `large_object` — 100 MiB, median (max), seconds
+
+| Pair | naive med (max) | generic seq med (max) |
+|---|---:|---:|
+| `s3->gcs` | 0.808 (1.187) | 0.882 (1.001) |
+| `gcs->s3` | 1.068 (1.120) | 0.980 (1.037) |
+| `s3->azure` | 2.122 (2.262) | 2.095 (2.473) |
+| `azure->s3` | 2.071 (**40.479**) | 1.453 (1.708) |
+| `gcs->azure` | 2.349 (2.815) | 2.262 (2.441) |
+| `azure->gcs` | 1.438 (2.165) | 0.962 (1.028) |
+
+The 40.5 s `azure->s3` naive max is one stalled round (other naive rounds were 1.6–2.4 s). Generic stayed flat.
+
+### `wire_latency` — 200 objects, 20 ms / HTTP request, median seconds
+
+| Pair | naive | generic seq | generic per-key | generic par_16 |
+|---|---:|---:|---:|---:|
+| `s3->gcs` | 9.969 | 9.906 | 20.255 | 1.442 |
+| `gcs->s3` | 10.293 | 9.792 | 19.335 | 1.071 |
+| `s3->azure` | 11.255 | 11.408 | 22.208 | 1.661 |
+| `azure->s3` | 11.079 | 11.104 | 22.067 | 1.753 |
+| `gcs->azure` | 10.909 | 10.308 | 19.917 | 1.269 |
+| `azure->gcs` | 10.926 | 10.254 | 21.074 | 1.569 |
+
+### `server_side_same_provider` — after the listing/client fix, median seconds
+
+| Pair | server-side (HTTP) | read/write (HTTP) |
+|---|---:|---:|
+| `s3->s3` | 0.014 (3) | 0.023 (5) |
+| `gcs->gcs` | 0.007 (3) | 0.010 (5) |
+| `azure->azure` | 0.023 (4) | 0.037 (6) |
 
 ## Does the contract fit Arrow/ADBC?
 
@@ -141,6 +207,7 @@ src/generic_transfer/
     emulators.py        fsspec + native SDK factory; seed large/small/mixed
     pair_baseline.py    Naive per-pair native-SDK copy
 docs/first-wave-exclusions.md
+docs/AZURE_SLOWDOWN.md
 fake_api/server.py
 docker-compose.yml / emulators.env / scripts/
 tests/                  contract, parity, markers, emulators, edges, open points, ADBC

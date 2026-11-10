@@ -1,0 +1,94 @@
+{
+  "timestamp_utc": "2026-11-10T06:26:46.814707+00:00",
+  "steps": [
+    0,
+    2000,
+    5000,
+    10000,
+    20000
+  ],
+  "samples": 30,
+  "results": {
+    "s3": [
+      {
+        "objects_in_bucket": 0,
+        "put_median_ms": 4.56816699988849,
+        "get_median_ms": 7.294819999970059
+      },
+      {
+        "objects_in_bucket": 2000,
+        "put_median_ms": 3.9784464997865143,
+        "get_median_ms": 6.826338000337273
+      },
+      {
+        "objects_in_bucket": 5000,
+        "put_median_ms": 5.642767999688658,
+        "get_median_ms": 8.914046499739925
+      },
+      {
+        "objects_in_bucket": 10000,
+        "put_median_ms": 29.36504999979661,
+        "get_median_ms": 40.468029999829014
+      },
+      {
+        "objects_in_bucket": 20000,
+        "put_median_ms": 69.31032099964796,
+        "get_median_ms": 92.52509449970603
+      }
+    ],
+    "gcs": [
+      {
+        "objects_in_bucket": 0,
+        "put_median_ms": 1.2134769999647688,
+        "get_median_ms": 2.1337270000003628
+      },
+      {
+        "objects_in_bucket": 2000,
+        "put_median_ms": 2.9429320002236636,
+        "get_median_ms": 2.750464499968075
+      },
+      {
+        "objects_in_bucket": 5000,
+        "put_median_ms": 5.6379419997938385,
+        "get_median_ms": 3.797939499690983
+      },
+      {
+        "objects_in_bucket": 10000,
+        "put_median_ms": 10.512099000152375,
+        "get_median_ms": 6.48185750014818
+      },
+      {
+        "objects_in_bucket": 20000,
+        "put_median_ms": 20.530768500066188,
+        "get_median_ms": 10.054054000192991
+      }
+    ],
+    "azure": [
+      {
+        "objects_in_bucket": 0,
+        "put_median_ms": 4.266952000307356,
+        "get_median_ms": 5.8436279996385565
+      },
+      {
+        "objects_in_bucket": 2000,
+        "put_median_ms": 3.7110715002199868,
+        "get_median_ms": 5.283037000026525
+      },
+      {
+        "objects_in_bucket": 5000,
+        "put_median_ms": 3.2731615001466707,
+        "get_median_ms": 4.4163800002934295
+      },
+      {
+        "objects_in_bucket": 10000,
+        "put_median_ms": 3.49686700019447,
+        "get_median_ms": 4.775605999839172
+      },
+      {
+        "objects_in_bucket": 20000,
+        "put_median_ms": 3.471802499916521,
+        "get_median_ms": 4.914844500035542
+      }
+    ]
+  }
+}

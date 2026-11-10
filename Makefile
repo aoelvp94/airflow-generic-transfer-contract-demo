@@ -1,5 +1,5 @@
 # Mirror of justfile targets for reviewers without `just`.
-.PHONY: install up down status test test-integration test-all bench bench-emulators bench-scale bench-scale-quick bench-adbc e2e check reproduce
+.PHONY: install up down status test test-integration test-all bench bench-emulators bench-scale bench-scale-quick bench-scale-fresh profile-listing probe-emulators bench-adbc e2e check reproduce
 
 install:
 	uv venv .venv
@@ -30,10 +30,26 @@ bench-emulators:
 	.venv/bin/python scripts/bench_emulators.py --rounds 5
 
 bench-scale:
-	.venv/bin/python scripts/bench_scale.py --rounds 3
+	.venv/bin/python scripts/bench_scale.py --rounds 5
 
 bench-scale-quick:
 	.venv/bin/python scripts/bench_scale.py --quick --rounds 3
+
+# Restart emulators first: S3Mock slows down as objects accumulate (see docs/EMULATORS.md).
+bench-scale-fresh:
+	./scripts/emulators.sh down
+	./scripts/emulators.sh up
+	.venv/bin/python scripts/bench_scale.py --rounds 5
+
+profile-listing:
+	.venv/bin/python scripts/profile_listing.py --n 1000 --rounds 3 --cprofile
+
+probe-emulators:
+	./scripts/emulators.sh down
+	./scripts/emulators.sh up
+	.venv/bin/python scripts/probe_emulator_degradation.py --no-cleanup
+	./scripts/emulators.sh down
+	./scripts/emulators.sh up
 
 bench-adbc:
 	.venv/bin/python scripts/bench_adbc.py --rows 1000000 --rounds 3
@@ -43,4 +59,4 @@ e2e: up test-all bench bench-emulators bench-scale-quick bench-adbc
 check: test bench
 
 reproduce: install e2e
-	@echo "Results in bench-out/ (BENCH.md, BENCH_SCALE.md, BENCH_ADBC.md)"
+	@echo "Results in bench-out/ (BENCH.md, BENCH_SCALE_QUICK.md, BENCH_ADBC.md). Full scale run: just bench-scale-fresh"

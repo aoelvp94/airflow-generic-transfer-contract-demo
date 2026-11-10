@@ -3,18 +3,33 @@
 
 Scenarios
 ---------
-* one large object (default 100 MiB)
-* 1000 small (~4 KiB) objects with folder markers
-* mixed tree (markers + unicode + spaces + 0-byte real file)
-* all 6 ordered cross-cloud pairs
-* modes: (a) naive sequential (b) generic sequential (c) generic parallel
-  (d) same-provider server-side where supported
-* cold/warm, median of N rounds, request counts, peak tracemalloc
-* optional simulated per-request latency (shows why request count dominates)
+* ``small_objects``  N small (~4 KiB) objects with periodic folder markers
+* ``large_object``   one large object (default 100 MiB)
+* ``mixed_tree``     markers + unicode + spaces + 0-byte real file
+* ``server_side_same_provider``  copy_object / copy_blob / start_copy_from_url
+* ``wire_latency``   small objects with a fixed delay injected before **every**
+  HTTP request (list, HEAD, GET, PUT) -- the realistic case for parallelism
 
-Honest caveat (also written into BENCH_SCALE.md): emulators on localhost do
-**not** represent real cloud latency or throughput. Use ``--latency-ms`` to
-illustrate the request-count effect under synthetic RTT.
+Modes per pair
+--------------
+* ``naive_sequential``            today's pair-operator shape: native SDK list,
+                                  GET, PUT key by key (markers copied)
+* ``generic_sequential_per_key``  generic copier with the pre-06 listing
+                                  (one ``info()``/HEAD per key + HEAD in open)
+* ``generic_sequential``          generic copier, single listing, ``cat_file``
+* ``generic_parallel_{w}``        same, bounded thread pool of ``w`` workers
+
+Every timed run records cold (round 0) and warm median, tracemalloc peak and
+two request counts: ``logical`` (what the code thinks it did: list/get/put)
+and ``http`` (real requests on the wire, counted at the aiohttp / urllib3
+transport, see ``generic_transfer.wire``).
+
+Destination prefixes are wiped after every round (outside the timed region) so
+emulator object counts stay bounded; see bench-out/EMULATOR_DEGRADATION.md for
+why that matters with S3Mock.
+
+Honest caveat (also in the snapshot): localhost emulators do not represent
+real cloud latency or throughput.
 """
 from __future__ import annotations
 
@@ -24,17 +39,23 @@ import os
 import platform
 import resource
 import statistics
+import subprocess
 import sys
 import time
 import tracemalloc
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT))
+
+SRC_BUCKET = {"s3": "src-bucket", "gcs": "src-bucket", "azure": "src-container"}
+DST_BUCKET = {"s3": "dst-bucket", "gcs": "dst-bucket", "azure": "dst-container"}
 
 
 def _rss_mb() -> float:
-    # Linux: ru_maxrss is KiB
     return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0
 
 
@@ -44,202 +65,248 @@ def main() -> int:
     p.add_argument("--size-mb", type=int, default=100)
     p.add_argument("--small-n", type=int, default=1000)
     p.add_argument("--small-bytes", type=int, default=4096)
-    p.add_argument("--workers", default="8",
-                   help="comma-separated worker counts for parallel mode "
-                        "(default 8; use 4,8,16 for the full matrix)")
+    p.add_argument("--workers", default="4,8,16")
     p.add_argument("--chunk-size", type=int, default=1024 * 1024)
-    p.add_argument("--latency-ms", type=float, default=0.0)
-    p.add_argument("--latency-demo-ms", type=float, default=25.0,
-                   help="separate small-tree latency demo (default 25ms/req)")
+    p.add_argument("--latency-ms", type=float, default=20.0,
+                   help="per-HTTP-request delay for the wire_latency scenario")
+    p.add_argument("--latency-n", type=int, default=200,
+                   help="objects in the wire_latency scenario")
+    p.add_argument("--latency-pairs", default="all",
+                   help="'all' or comma list like s3->gcs,azure->s3")
+    p.add_argument("--pairs", default="all", help="'all' or comma list")
     p.add_argument("--skip-large", action="store_true")
     p.add_argument("--skip-small", action="store_true")
     p.add_argument("--skip-mixed", action="store_true")
     p.add_argument("--skip-server-side", action="store_true")
+    p.add_argument("--skip-latency", action="store_true")
     p.add_argument("--quick", action="store_true",
-                   help="size-mb=8, small-n=100, rounds=3 — faster local loop")
+                   help="size-mb=8, small-n=100, latency-n=50 -- fast local loop")
+    p.add_argument("--resume", action="store_true",
+                   help="reuse scenarios already saved in bench-out/<out-name>.partial.json")
+    p.add_argument("--out-name", default=None,
+                   help="snapshot basename in bench-out/ (default BENCH_SCALE, "
+                        "or BENCH_SCALE_QUICK with --quick)")
     args = p.parse_args()
     if args.quick:
         args.size_mb = min(args.size_mb, 8)
         args.small_n = min(args.small_n, 100)
-        args.rounds = min(args.rounds, 3)
-        if args.workers == "8":
-            args.workers = "4,8,16"
+        args.latency_n = min(args.latency_n, 50)
+    out_name = args.out_name or ("BENCH_SCALE_QUICK" if args.quick else "BENCH_SCALE")
 
     os.environ.setdefault("STORAGE_EMULATOR_HOST", "http://127.0.0.1:14443")
-    sys.path.insert(0, str(ROOT / "src"))
-    sys.path.insert(0, str(ROOT))
 
-    from generic_transfer.adapters.emulators import (
-        clear_prefix,
-        ensure_bucket,
-        load_emulator_env,
-        make_fs,
-        put_bytes,
-        seed_many_small,
-        seed_mixed_tree,
-        seed_one_large,
-        seed_tree_with_markers,
-    )
-    from generic_transfer.adapters.file_copy import (
-        ObjectStoreFileCopyHook,
-        RequestCounter,
-        copy_files_parallel,
-        copy_files_sequential,
-        server_side_copy_same_provider,
-    )
-    from generic_transfer.adapters.file_sink import list_transfer_keys
-    from generic_transfer.adapters.pair_baseline import (
-        PAIRS,
-        SAME_PROVIDER_PAIRS,
-        naive_pair_copy,
-    )
+    from generic_transfer import wire
+    from generic_transfer.adapters.emulators import ensure_bucket, load_emulator_env, make_fs
+    from generic_transfer.adapters.pair_baseline import PAIRS, SAME_PROVIDER_PAIRS
     from tests.conftest import emulators_available
 
     load_emulator_env()
     if not emulators_available():
-        raise SystemExit("emulators not up — run: just up")
+        raise SystemExit("emulators not up -- run: just up")
+    wire.install()
 
-    src_bucket = {"s3": "src-bucket", "gcs": "src-bucket", "azure": "src-container"}
-    dst_bucket = {"s3": "dst-bucket", "gcs": "dst-bucket", "azure": "dst-container"}
     for fl in ("s3", "gcs", "azure"):
-        ensure_bucket(make_fs(fl, bucket=src_bucket[fl]))
-        ensure_bucket(make_fs(fl, bucket=dst_bucket[fl]))
+        ensure_bucket(make_fs(fl, bucket=SRC_BUCKET[fl]))
+        ensure_bucket(make_fs(fl, bucket=DST_BUCKET[fl]))
 
+    pairs = _select_pairs(PAIRS, args.pairs)
+    lat_pairs = _select_pairs(PAIRS, args.latency_pairs)
     workers_list = [int(x) for x in args.workers.split(",") if x.strip()]
     results: dict = {
         "env": _env(args),
         "caveat": (
             "Emulators on localhost do not represent real cloud latency or "
-            "throughput. Median times here are mostly client/emulator overhead. "
-            "Use latency_demo to see how request count dominates under RTT."
+            "throughput. Times without injected latency are mostly client and "
+            "emulator CPU. The wire_latency scenario adds a fixed delay before "
+            "every HTTP request to model round-trip time."
         ),
         "scenarios": {},
     }
-
-    if not args.skip_mixed:
-        results["scenarios"]["mixed_tree"] = _bench_pairs(
-            scenario="mixed_tree",
-            pairs=PAIRS,
-            rounds=args.rounds,
-            seed_fn=lambda emu, prefix: seed_mixed_tree(emu, prefix),
-            src_bucket=src_bucket,
-            dst_bucket=dst_bucket,
-            workers_list=workers_list,
-            chunk_size=args.chunk_size,
-            latency_s=args.latency_ms / 1000.0,
-            expect_objects=5,  # a, hello world, café, empty, nested/b — markers skipped
-        )
-
-    if not args.skip_small:
-        results["scenarios"]["small_1000"] = _bench_pairs(
-            scenario="small_objects",
-            pairs=PAIRS,
-            rounds=args.rounds,
-            seed_fn=lambda emu, prefix: seed_many_small(
-                emu, prefix, n=args.small_n, size=args.small_bytes, marker_every=100
-            ),
-            src_bucket=src_bucket,
-            dst_bucket=dst_bucket,
-            workers_list=workers_list,
-            chunk_size=args.chunk_size,
-            latency_s=0.0,
-            expect_objects=args.small_n,
-        )
-
-    if not args.skip_large:
-        # Large object: still all 6 pairs, but only seq + parallel(8); skip naive
-        # marker logic (single key). Server-side covered separately.
-        results["scenarios"]["large_object"] = _bench_large(
-            pairs=PAIRS,
-            rounds=args.rounds,
-            size_mb=args.size_mb,
-            src_bucket=src_bucket,
-            dst_bucket=dst_bucket,
-            workers_list=workers_list,
-            chunk_size=args.chunk_size,
-        )
-
-    if not args.skip_server_side:
-        results["scenarios"]["server_side_same_provider"] = _bench_server_side(
-            pairs=SAME_PROVIDER_PAIRS,
-            rounds=args.rounds,
-            src_bucket=src_bucket,
-            dst_bucket=dst_bucket,
-        )
-
-    # Latency demo on the tiny marker tree (4 keys native / 2 transfer).
-    results["scenarios"]["latency_demo"] = _latency_demo(
-        src_bucket=src_bucket,
-        dst_bucket=dst_bucket,
-        latency_ms=args.latency_demo_ms,
-        rounds=max(3, args.rounds),
-    )
-
+    t_start = time.perf_counter()
     out_dir = ROOT / "bench-out"
     out_dir.mkdir(exist_ok=True)
-    json_path = out_dir / "BENCH_SCALE.json"
-    md_path = out_dir / "BENCH_SCALE.md"
+    partial_path = out_dir / f"{out_name}.partial.json"
+    done: dict = {}
+    if args.resume and partial_path.exists():
+        done = json.loads(partial_path.read_text()).get("scenarios", {})
+        print(f"resuming; already done: {sorted(done)}", flush=True)
+
+    def run_scenario(name, fn):
+        if name in done:
+            results["scenarios"][name] = done[name]
+            return
+        results["scenarios"][name] = fn()
+        partial_path.write_text(json.dumps(results, indent=2, default=str) + "\n")
+
+    if not args.skip_mixed:
+        from generic_transfer.adapters.emulators import seed_mixed_tree
+        run_scenario("mixed_tree", lambda: _bench_pairs(
+            scenario="mixed", pairs=pairs, rounds=args.rounds,
+            seed_fn=lambda emu, prefix: seed_mixed_tree(emu, prefix),
+            workers_list=workers_list, chunk_size=args.chunk_size, latency_ms=0.0,
+        ))
+    if not args.skip_small:
+        from generic_transfer.adapters.emulators import seed_many_small
+        run_scenario("small_objects", lambda: _bench_pairs(
+            scenario="small", pairs=pairs, rounds=args.rounds,
+            seed_fn=lambda emu, prefix: seed_many_small(
+                emu, prefix, n=args.small_n, size=args.small_bytes, marker_every=100),
+            workers_list=workers_list, chunk_size=args.chunk_size, latency_ms=0.0,
+        ))
+    if not args.skip_large:
+        run_scenario("large_object", lambda: _bench_large(
+            pairs=pairs, rounds=args.rounds, size_mb=args.size_mb,
+            workers_list=workers_list, chunk_size=args.chunk_size,
+        ))
+    if not args.skip_server_side:
+        run_scenario("server_side_same_provider", lambda: _bench_server_side(
+            pairs=SAME_PROVIDER_PAIRS, rounds=args.rounds,
+        ))
+    if not args.skip_latency and args.latency_ms > 0:
+        from generic_transfer.adapters.emulators import seed_many_small
+        run_scenario("wire_latency", lambda: _bench_pairs(
+            scenario="lat", pairs=lat_pairs, rounds=args.rounds,
+            seed_fn=lambda emu, prefix: seed_many_small(
+                emu, prefix, n=args.latency_n, size=args.small_bytes, marker_every=50),
+            workers_list=workers_list, chunk_size=args.chunk_size,
+            latency_ms=args.latency_ms,
+        ))
+
+    results["env"]["wall_clock_s"] = time.perf_counter() - t_start
+    json_path = out_dir / f"{out_name}.json"
+    md_path = out_dir / f"{out_name}.md"
     json_path.write_text(json.dumps(results, indent=2, default=str) + "\n")
-    md_path.write_text(_render(results))
+    md_path.write_text(_render(results, quick=args.quick))
     print(md_path.read_text())
+    partial_path.unlink(missing_ok=True)
     print(f"\nWrote {json_path} and {md_path}")
     return 0
+
+
+def _select_pairs(all_pairs, spec: str):
+    if spec == "all":
+        return list(all_pairs)
+    wanted = {s.strip() for s in spec.split(",") if s.strip()}
+    return [pr for pr in all_pairs if f"{pr[0]}->{pr[1]}" in wanted]
+
+
+def _sh(cmd: list[str]) -> str:
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=10).stdout.strip()
+    except Exception:
+        return ""
 
 
 def _env(args) -> dict:
     import importlib
 
     pkgs = {}
-    for label, mod in {
-        "fsspec": "fsspec",
-        "s3fs": "s3fs",
-        "gcsfs": "gcsfs",
-        "adlfs": "adlfs",
-        "boto3": "boto3",
-    }.items():
+    for mod in ("fsspec", "s3fs", "gcsfs", "adlfs", "boto3", "aiohttp", "urllib3",
+                "azure.storage.blob", "google.cloud.storage"):
         try:
-            pkgs[label] = getattr(importlib.import_module(mod), "__version__", "?")
+            m = importlib.import_module(mod)
+            pkgs[mod] = getattr(m, "__version__", getattr(m, "VERSION", "?"))
         except Exception:
-            pkgs[label] = "missing"
+            pkgs[mod] = "missing"
+    cpu = ""
+    try:
+        for line in Path("/proc/cpuinfo").read_text().splitlines():
+            if line.startswith("model name"):
+                cpu = line.split(":", 1)[1].strip()
+                break
+    except Exception:
+        cpu = platform.processor()
+    mem_gb = None
+    try:
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            if line.startswith("MemTotal"):
+                mem_gb = round(int(line.split()[1]) / 1024 / 1024, 1)
+    except Exception:
+        pass
+    images = {}
+    for name in ("gtc-s3", "gtc-gcs", "gtc-azure"):
+        images[name] = _sh(["docker", "inspect", "-f", "{{.Config.Image}}", name])
     return {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "platform": platform.platform(),
         "python": platform.python_version(),
+        "cpu_model": cpu,
+        "cpu_count": os.cpu_count(),
+        "mem_total_gb": mem_gb,
+        "docker_server": _sh(["docker", "version", "--format", "{{.Server.Version}}"]),
+        "emulator_images": images,
         "rounds": args.rounds,
         "size_mb": args.size_mb,
         "small_n": args.small_n,
+        "small_bytes": args.small_bytes,
         "workers": args.workers,
         "chunk_size": args.chunk_size,
         "latency_ms": args.latency_ms,
-        "latency_demo_ms": args.latency_demo_ms,
+        "latency_n": args.latency_n,
         "s3_backend": os.environ.get("EMULATOR_S3_BACKEND", "s3mock"),
-        "docker_host": os.environ.get("DOCKER_HOST", ""),
         "packages": pkgs,
     }
 
 
-def _timed(fn, rounds: int) -> dict:
-    samples = []
-    payloads = []
-    peaks = []
-    rss = []
+def _wipe(emu, prefix: str) -> None:
+    """Fast untimed cleanup of a destination prefix via native SDK."""
+    from generic_transfer.adapters.emulators import _native_client, list_keys_native
+
+    keys = list_keys_native(emu, prefix)
+    if not keys:
+        return
+    client = _native_client(emu)
+    if emu.flavour == "s3":
+        for i in range(0, len(keys), 1000):
+            client.delete_objects(
+                Bucket=emu.bucket,
+                Delete={"Objects": [{"Key": k} for k in keys[i:i + 1000]]},
+            )
+        return
+    if emu.flavour == "gcs":
+        bucket = client.bucket(emu.bucket)
+        fn = lambda k: bucket.blob(k).delete()  # noqa: E731
+    else:
+        container = client.get_container_client(emu.bucket)
+        fn = lambda k: container.delete_blob(k)  # noqa: E731
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        list(pool.map(fn, keys))
+
+
+def _timed(fn, rounds: int, *, latency_ms: float = 0.0) -> dict:
+    """Run ``fn(round_i)`` ``rounds`` times.
+
+    ``fn`` returns ``(payload, cleanup)``; cleanup runs after timing and after
+    latency injection is switched off.
+    """
+    from generic_transfer import wire
+
+    samples, peaks, rss, http_totals = [], [], [], []
+    last = {}
     for round_i in range(rounds):
+        wire.reset()
+        wire.set_latency_ms(latency_ms)
         tracemalloc.start()
         t0 = time.perf_counter()
         try:
-            payload = fn(round_i)
-        except TypeError:
-            payload = fn()
-        elapsed = time.perf_counter() - t0
-        current, peak = tracemalloc.get_traced_memory()
-        tracemalloc.stop()
+            payload, cleanup = fn(round_i)
+        finally:
+            elapsed = time.perf_counter() - t0
+            _cur, peak = tracemalloc.get_traced_memory()
+            tracemalloc.stop()
+            wire.set_latency_ms(0)
+        http = wire.snapshot()
+        payload = {k: v for k, v in payload.items() if k != "copied"}
         payload["seconds"] = elapsed
-        payload["tracemalloc_peak_mb"] = peak / (1024 * 1024)
-        payload["rss_max_mb"] = _rss_mb()
+        payload["http_requests"] = http
+        payload["http_total"] = sum(http.values())
         samples.append(elapsed)
-        payloads.append(payload)
-        peaks.append(payload["tracemalloc_peak_mb"])
-        rss.append(payload["rss_max_mb"])
+        peaks.append(peak / (1024 * 1024))
+        rss.append(_rss_mb())
+        http_totals.append(payload["http_total"])
+        last = payload
+        if cleanup is not None:
+            cleanup()
     return {
         "cold_s": samples[0],
         "warm_median_s": statistics.median(samples[1:] or samples),
@@ -247,185 +314,143 @@ def _timed(fn, rounds: int) -> dict:
         "samples_s": samples,
         "tracemalloc_peak_median_mb": statistics.median(peaks),
         "rss_max_mb": max(rss),
-        "last": payloads[-1],
+        "http_total_median": statistics.median(http_totals),
+        "last": last,
     }
 
 
-def _bench_pairs(*, scenario, pairs, rounds, seed_fn, src_bucket, dst_bucket,
-                 workers_list, chunk_size, latency_s, expect_objects) -> list:
-    from generic_transfer.adapters.emulators import make_fs, clear_prefix, put_bytes
-    from generic_transfer.adapters.file_copy import ObjectStoreFileCopyHook
-    from generic_transfer.adapters.pair_baseline import naive_pair_copy
+def _generic(src, dst, *, src_prefix, dest_prefix, mode, workers=1, chunk_size,
+             listing="single"):
     from generic_transfer import GenericFileTransfer
+    from generic_transfer.adapters.file_copy import ObjectStoreFileCopyHook
+
+    params = {
+        "source_fs": src.fs,
+        "source_bucket": src.bucket,
+        "source_prefix": src_prefix,
+        "dest_prefix": dest_prefix,
+        "mode": mode,
+        "listing": listing,
+    }
+    if chunk_size:
+        params["chunk_size"] = chunk_size
+    if mode == "parallel":
+        params["workers"] = workers
+    return GenericFileTransfer(
+        destination_hook=ObjectStoreFileCopyHook(dst), copy_params=params
+    ).execute()
+
+
+def _bench_pairs(*, scenario, pairs, rounds, seed_fn, workers_list, chunk_size,
+                 latency_ms) -> list:
+    from generic_transfer.adapters.emulators import make_fs
+    from generic_transfer.adapters.pair_baseline import naive_pair_copy
 
     out = []
     for src_fl, dst_fl in pairs:
         prefix = f"scale-{scenario}-{src_fl}-{dst_fl}"
         row = {"pair": f"{src_fl}->{dst_fl}", "modes": {}}
-
-        # Seed source ONCE per pair (re-seeding 1000 keys every round dominated wall time).
-        src = make_fs(src_fl, bucket=src_bucket[src_fl])
+        src = make_fs(src_fl, bucket=SRC_BUCKET[src_fl])
+        dst = make_fs(dst_fl, bucket=DST_BUCKET[dst_fl])
         seed_fn(src, prefix)
 
-        # Unique dest prefix per round avoids a 1000-key clear_prefix each time.
-        # (a) naive
-        def run_naive(round_i=0, _src=src, _dst_fl=dst_fl, _prefix=prefix):
-            dst = make_fs(_dst_fl, bucket=dst_bucket[_dst_fl])
-            dest_prefix = f"naive-{_prefix}-r{round_i}"
-            return naive_pair_copy(
-                _src, dst, source_prefix=_prefix, dest_prefix=dest_prefix,
-                skip_markers=False,
-            )
+        def run_naive(round_i, _src=src, _dst=dst, _prefix=prefix):
+            dp = f"naive-{_prefix}-r{round_i}"
+            res = naive_pair_copy(_src, _dst, source_prefix=_prefix, dest_prefix=dp,
+                                  skip_markers=False)
+            return res, (lambda: _wipe(_dst, dp))
 
-        row["modes"]["naive_sequential"] = _timed(run_naive, rounds)
+        def make_generic(mode, workers=1, listing="single", tag=""):
+            def run(round_i, _src=src, _dst=dst, _prefix=prefix):
+                dp = f"gen-{tag}-{_prefix}-r{round_i}"
+                res = _generic(_src, _dst, src_prefix=_prefix, dest_prefix=dp,
+                               mode=mode, workers=workers, chunk_size=chunk_size,
+                               listing=listing)
+                return res, (lambda: _wipe(_dst, dp))
+            return run
 
-        # (b) generic sequential
-        def run_generic_seq(round_i=0, _src=src, _dst_fl=dst_fl, _prefix=prefix):
-            dst = make_fs(_dst_fl, bucket=dst_bucket[_dst_fl])
-            dest_prefix = f"gen-seq-{_prefix}-r{round_i}"
-            hook = ObjectStoreFileCopyHook(dst)
-            return GenericFileTransfer(
-                destination_hook=hook,
-                copy_params={
-                    "source_fs": _src.fs,
-                    "source_bucket": _src.bucket,
-                    "source_prefix": _prefix,
-                    "dest_prefix": dest_prefix,
-                    "mode": "sequential",
-                    "chunk_size": chunk_size,
-                    "latency_s": latency_s,
-                },
-            ).execute()
-
-        row["modes"]["generic_sequential"] = _timed(run_generic_seq, rounds)
-
-        # (c) parallel for each worker count
+        row["modes"]["naive_sequential"] = _timed(run_naive, rounds, latency_ms=latency_ms)
+        row["modes"]["generic_sequential_per_key"] = _timed(
+            make_generic("sequential", listing="per_key", tag="seqpk"), rounds,
+            latency_ms=latency_ms)
+        row["modes"]["generic_sequential"] = _timed(
+            make_generic("sequential", tag="seq"), rounds, latency_ms=latency_ms)
         for w in workers_list:
-            def run_par(round_i=0, workers=w, _src=src, _dst_fl=dst_fl, _prefix=prefix):
-                dst = make_fs(_dst_fl, bucket=dst_bucket[_dst_fl])
-                dest_prefix = f"gen-par{workers}-{_prefix}-r{round_i}"
-                hook = ObjectStoreFileCopyHook(dst)
-                return GenericFileTransfer(
-                    destination_hook=hook,
-                    copy_params={
-                        "source_fs": _src.fs,
-                        "source_bucket": _src.bucket,
-                        "source_prefix": _prefix,
-                        "dest_prefix": dest_prefix,
-                        "mode": "parallel",
-                        "workers": workers,
-                        "chunk_size": chunk_size,
-                    },
-                ).execute()
-
-            row["modes"][f"generic_parallel_{w}"] = _timed(run_par, rounds)
-
+            row["modes"][f"generic_parallel_{w}"] = _timed(
+                make_generic("parallel", workers=w, tag=f"par{w}"), rounds,
+                latency_ms=latency_ms)
+        _wipe(src, prefix)
         out.append(row)
         print(f"  [{scenario}] {row['pair']} done", flush=True)
     return out
 
 
-def _bench_large(*, pairs, rounds, size_mb, src_bucket, dst_bucket, workers_list, chunk_size):
-    from generic_transfer.adapters.emulators import make_fs, clear_prefix, seed_one_large
-    from generic_transfer.adapters.file_copy import ObjectStoreFileCopyHook
-    from generic_transfer import GenericFileTransfer
+def _bench_large(*, pairs, rounds, size_mb, workers_list, chunk_size) -> list:
+    from generic_transfer.adapters.emulators import make_fs, seed_one_large
+    from generic_transfer.adapters.pair_baseline import naive_pair_copy
 
     out = []
     for src_fl, dst_fl in pairs:
         prefix = f"large-{src_fl}-{dst_fl}"
         row = {"pair": f"{src_fl}->{dst_fl}", "size_mb": size_mb, "modes": {}}
-
-        src = make_fs(src_fl, bucket=src_bucket[src_fl])
+        src = make_fs(src_fl, bucket=SRC_BUCKET[src_fl])
+        dst = make_fs(dst_fl, bucket=DST_BUCKET[dst_fl])
         seed_one_large(src, prefix, size_mb=size_mb)
 
-        def run_seq(round_i=0, _src=src, _dst_fl=dst_fl, _prefix=prefix):
-            dst = make_fs(_dst_fl, bucket=dst_bucket[_dst_fl])
-            return GenericFileTransfer(
-                destination_hook=ObjectStoreFileCopyHook(dst),
-                copy_params={
-                    "source_fs": _src.fs,
-                    "source_bucket": _src.bucket,
-                    "source_prefix": _prefix,
-                    "dest_prefix": f"lseq-{_prefix}-r{round_i}",
-                    "mode": "sequential",
-                    "chunk_size": chunk_size,
-                },
-            ).execute()
+        def run_naive(round_i, _src=src, _dst=dst, _prefix=prefix):
+            dp = f"lnaive-{_prefix}-r{round_i}"
+            res = naive_pair_copy(_src, _dst, source_prefix=_prefix, dest_prefix=dp)
+            return res, (lambda: _wipe(_dst, dp))
 
-        row["modes"]["generic_sequential"] = _timed(run_seq, rounds)
-        for w in workers_list[:1]:  # one worker setting for large (single object)
-            def run_par(round_i=0, workers=w, _src=src, _dst_fl=dst_fl, _prefix=prefix):
-                dst = make_fs(_dst_fl, bucket=dst_bucket[_dst_fl])
-                return GenericFileTransfer(
-                    destination_hook=ObjectStoreFileCopyHook(dst),
-                    copy_params={
-                        "source_fs": _src.fs,
-                        "source_bucket": _src.bucket,
-                        "source_prefix": _prefix,
-                        "dest_prefix": f"lpar-{_prefix}-r{round_i}",
-                        "mode": "parallel",
-                        "workers": workers,
-                        "chunk_size": chunk_size,
-                    },
-                ).execute()
+        def run_gen(round_i, mode="sequential", workers=1, _src=src, _dst=dst, _prefix=prefix):
+            dp = f"l{mode[:3]}{workers}-{_prefix}-r{round_i}"
+            res = _generic(_src, _dst, src_prefix=_prefix, dest_prefix=dp, mode=mode,
+                           workers=workers, chunk_size=chunk_size)
+            return res, (lambda: _wipe(_dst, dp))
 
-            row["modes"][f"generic_parallel_{w}"] = _timed(run_par, rounds)
+        row["modes"]["naive_sequential"] = _timed(run_naive, rounds)
+        row["modes"]["generic_sequential"] = _timed(run_gen, rounds)
+        w = workers_list[0]
+        row["modes"][f"generic_parallel_{w}"] = _timed(
+            lambda r, _w=w: run_gen(r, mode="parallel", workers=_w), rounds)
+        _wipe(src, prefix)
         out.append(row)
         print(f"  [large {size_mb}MiB] {row['pair']} done", flush=True)
     return out
 
 
-def _bench_server_side(*, pairs, rounds, src_bucket, dst_bucket):
-    from generic_transfer.adapters.emulators import (
-        make_fs, clear_prefix, seed_tree_with_markers,
-    )
-    from generic_transfer.adapters.file_copy import ObjectStoreFileCopyHook
+def _bench_server_side(*, pairs, rounds) -> list:
     from generic_transfer import GenericFileTransfer
+    from generic_transfer.adapters.emulators import make_fs, seed_tree_with_markers
+    from generic_transfer.adapters.file_copy import ObjectStoreFileCopyHook
 
     out = []
     for src_fl, dst_fl in pairs:
         prefix = f"ss-{src_fl}"
         row = {"pair": f"{src_fl}->{dst_fl}", "modes": {}}
+        src = make_fs(src_fl, bucket=SRC_BUCKET[src_fl])
+        dst = make_fs(dst_fl, bucket=DST_BUCKET[dst_fl])
+        seed_tree_with_markers(src, prefix)
 
-        def run_ss():
-            src = make_fs(src_fl, bucket=src_bucket[src_fl])
-            dst = make_fs(dst_fl, bucket=dst_bucket[dst_fl])
-            seed_tree_with_markers(src, prefix)
-            clear_prefix(dst, f"ss-out-{prefix}")
+        def run_ss(round_i):
+            dp = f"ss-out-{prefix}-r{round_i}"
             try:
-                return GenericFileTransfer(
+                res = GenericFileTransfer(
                     destination_hook=ObjectStoreFileCopyHook(dst),
-                    copy_params={
-                        "source_fs": src.fs,
-                        "source_prefix": prefix,
-                        "source_emu": src,
-                        "dest_prefix": f"ss-out-{prefix}",
-                        "mode": "server_side",
-                    },
+                    copy_params={"source_fs": src.fs, "source_prefix": prefix,
+                                 "source_emu": src, "dest_prefix": dp,
+                                 "mode": "server_side"},
                 ).execute()
             except Exception as exc:
-                return {
-                    "error": f"{type(exc).__name__}: {exc}",
-                    "count": 0,
-                    "request_total": 0,
-                    "mode": "server_side",
-                }
+                res = {"error": f"{type(exc).__name__}: {exc}", "count": 0,
+                       "request_total": 0, "mode": "server_side"}
+            return res, (lambda: _wipe(dst, dp))
 
-        def run_rw():
-            src = make_fs(src_fl, bucket=src_bucket[src_fl])
-            dst = make_fs(dst_fl, bucket=dst_bucket[dst_fl])
-            seed_tree_with_markers(src, prefix)
-            clear_prefix(dst, f"rw-out-{prefix}")
-            return GenericFileTransfer(
-                destination_hook=ObjectStoreFileCopyHook(dst),
-                copy_params={
-                    "source_fs": src.fs,
-                    "source_bucket": src.bucket,
-                    "source_prefix": prefix,
-                    "dest_prefix": f"rw-out-{prefix}",
-                    "mode": "sequential",
-                },
-            ).execute()
+        def run_rw(round_i):
+            dp = f"rw-out-{prefix}-r{round_i}"
+            res = _generic(src, dst, src_prefix=prefix, dest_prefix=dp,
+                           mode="sequential", chunk_size=None)
+            return res, (lambda: _wipe(dst, dp))
 
         row["modes"]["server_side"] = _timed(run_ss, rounds)
         row["modes"]["read_write"] = _timed(run_rw, rounds)
@@ -434,114 +459,55 @@ def _bench_server_side(*, pairs, rounds, src_bucket, dst_bucket):
     return out
 
 
-def _latency_demo(*, src_bucket, dst_bucket, latency_ms, rounds):
-    """Tiny marker tree with injected RTT — request count dominates wall time."""
-    from generic_transfer.adapters.emulators import make_fs, clear_prefix, seed_tree_with_markers
-    from generic_transfer.adapters.file_copy import ObjectStoreFileCopyHook
-    from generic_transfer.adapters.pair_baseline import naive_pair_copy
-    from generic_transfer import GenericFileTransfer
-
-    src_fl, dst_fl = "s3", "gcs"
-    prefix = "latdemo"
-    latency_s = latency_ms / 1000.0
-
-    def run_naive():
-        src = make_fs(src_fl, bucket=src_bucket[src_fl])
-        dst = make_fs(dst_fl, bucket=dst_bucket[dst_fl])
-        seed_tree_with_markers(src, prefix)
-        clear_prefix(dst, "lat-naive")
-        t0 = time.perf_counter()
-        # Approximate latency: sleep per native get+put (4+4) outside the helper
-        # by wrapping through generic path with skip_markers False count.
-        result = naive_pair_copy(
-            src, dst, source_prefix=prefix, dest_prefix="lat-naive", skip_markers=False
-        )
-        # Inject after the fact proportional to request_total for illustration
-        time.sleep(latency_s * result["request_total"])
-        result["seconds"] = time.perf_counter() - t0
-        result["injected_latency_s"] = latency_s * result["request_total"]
-        return result
-
-    def run_generic():
-        src = make_fs(src_fl, bucket=src_bucket[src_fl])
-        dst = make_fs(dst_fl, bucket=dst_bucket[dst_fl])
-        seed_tree_with_markers(src, prefix)
-        clear_prefix(dst, "lat-gen")
-        hook = ObjectStoreFileCopyHook(dst)
-        t0 = time.perf_counter()
-        result = GenericFileTransfer(
-            destination_hook=hook,
-            copy_params={
-                "source_fs": src.fs,
-                "source_bucket": src.bucket,
-                "source_prefix": prefix,
-                "dest_prefix": "lat-gen",
-                "mode": "sequential",
-                "latency_s": latency_s,
-            },
-        ).execute()
-        result["seconds"] = time.perf_counter() - t0
-        result["injected_latency_s"] = latency_s * result.get("request_total", 0)
-        return result
-
-    return {
-        "pair": "s3->gcs",
-        "latency_ms_per_request": latency_ms,
-        "naive": _timed(run_naive, rounds),
-        "generic": _timed(run_generic, rounds),
-        "note": (
-            "Naive copies 4 objects (9 req); generic copies 2 (5 req). "
-            "With injected per-request latency, wall time tracks request_total."
-        ),
-    }
+SCENARIO_TITLES = {
+    "mixed_tree": "Mixed tree (markers, unicode, spaces, 0-byte real file)",
+    "small_objects": "Many small objects",
+    "large_object": "One large object",
+    "server_side_same_provider": "Same-provider server-side copy vs read/write",
+    "wire_latency": "Small objects with injected per-request latency",
+}
 
 
-def _render(results: dict) -> str:
+def _render(results: dict, *, quick: bool) -> str:
     env = results["env"]
+    title = "Scale bench (QUICK run)" if quick else "Scale bench (full run)"
     lines = [
-        "# Large-scale emulator bench",
+        f"# {title}",
         "",
-        f"- Captured (UTC): `{env['timestamp_utc']}`",
-        f"- Platform: `{env['platform']}` Python `{env['python']}`",
-        f"- Rounds: **{env['rounds']}** | large object: **{env['size_mb']} MiB** | "
-        f"small N: **{env['small_n']}** | workers: `{env['workers']}` | "
+        f"- Captured (UTC): `{env['timestamp_utc']}`; wall clock {env.get('wall_clock_s', 0) / 60:.1f} min",
+        f"- Host: `{env['cpu_model']}` x{env['cpu_count']}, {env['mem_total_gb']} GiB RAM, "
+        f"`{env['platform']}`, Python `{env['python']}`, Docker `{env['docker_server']}`",
+        f"- Emulators: {', '.join(f'`{v}`' for v in env['emulator_images'].values() if v)}",
+        f"- Packages: {', '.join(f'{k} `{v}`' for k, v in env['packages'].items())}",
+        f"- Rounds: **{env['rounds']}** (round 0 = cold) | large object: **{env['size_mb']} MiB** | "
+        f"small objects: **{env['small_n']} x {env['small_bytes']} B** | workers: `{env['workers']}` | "
         f"chunk_size: `{env['chunk_size']}`",
-        f"- S3 backend: `{env['s3_backend']}`",
+        f"- wire_latency: **{env['latency_ms']} ms** before every HTTP request, "
+        f"**{env['latency_n']}** objects",
         "",
         f"> **Caveat:** {results['caveat']}",
         "",
+        "Warm med = median of rounds 1..N-1 (with 3 rounds that is the mean of two samples, "
+        "so one stall moves it; this run uses the rounds shown above). Max = slowest round. "
+        "Columns: *HTTP reqs* = real requests counted at the transport (median over rounds); "
+        "*Logical* = the copier's own list/get/put tally (last round). Peak MB = tracemalloc "
+        "peak (Python allocations only, median over rounds).",
+        "",
     ]
     for name, payload in results["scenarios"].items():
-        lines += [f"## Scenario: `{name}`", ""]
-        if name == "latency_demo":
-            n = payload["naive"]
-            g = payload["generic"]
-            lines += [
-                f"Injected latency: **{payload['latency_ms_per_request']} ms/request** "
-                f"on `{payload['pair']}`.",
-                "",
-                payload["note"],
-                "",
-                "| Path | Median (s) | Requests (last) | Objects | Injected latency (s) |",
-                "|---|---:|---:|---:|---:|",
-                f"| naive | {n['median_s']:.3f} | {n['last'].get('request_total')} | "
-                f"{n['last'].get('count')} | {n['last'].get('injected_latency_s', 0):.3f} |",
-                f"| generic | {g['median_s']:.3f} | {g['last'].get('request_total')} | "
-                f"{g['last'].get('count')} | {g['last'].get('injected_latency_s', 0):.3f} |",
-                "",
-            ]
-            continue
+        lines += [f"## `{name}`: {SCENARIO_TITLES.get(name, name)}", ""]
         lines += [
-            "| Pair | Mode | Cold (s) | Warm med (s) | Median (s) | Objects | Reqs | Peak MB (tracemalloc) |",
-            "|---|---|---:|---:|---:|---:|---:|---:|",
+            "| Pair | Mode | Cold (s) | Warm med (s) | Max (s) | Objects | HTTP reqs | Logical | Peak MB |",
+            "|---|---|---:|---:|---:|---:|---:|---:|---:|",
         ]
         for row in payload:
             for mode, stats in row["modes"].items():
                 last = stats["last"]
                 lines.append(
-                    f"| `{row['pair']}` | {mode} | {stats['cold_s']:.4f} | "
-                    f"{stats['warm_median_s']:.4f} | {stats['median_s']:.4f} | "
+                    f"| `{row['pair']}` | {mode} | {stats['cold_s']:.3f} | "
+                    f"{stats['warm_median_s']:.3f} | {max(stats['samples_s']):.3f} | "
                     f"{last.get('count', last.get('error', '?'))} | "
+                    f"{stats['http_total_median']:.0f} | "
                     f"{last.get('request_total', '?')} | "
                     f"{stats['tracemalloc_peak_median_mb']:.1f} |"
                 )
@@ -550,8 +516,8 @@ def _render(results: dict) -> str:
         "## Reproduce",
         "",
         "```bash",
-        "just up && just bench-scale          # full (100 MiB + 1000 objs)",
-        "just up && just bench-scale-quick    # 8 MiB + 100 objs",
+        "just up && just bench-scale          # full run -> bench-out/BENCH_SCALE.*",
+        "just up && just bench-scale-quick    # quick run -> bench-out/BENCH_SCALE_QUICK.*",
         "```",
         "",
     ]

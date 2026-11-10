@@ -84,32 +84,21 @@ def naive_pair_copy(
 
 
 def get_bytes_native(emu: EmulatorFS, key: str) -> bytes:
-    key = key.lstrip("/")
-    if emu.flavour == "s3":
-        import boto3
-        from botocore.client import Config
+    """GET one object with the provider SDK, reusing a cached client.
 
-        opts = emu.storage_options
-        client = boto3.client(
-            "s3",
-            endpoint_url=opts["client_kwargs"]["endpoint_url"],
-            aws_access_key_id=opts["key"],
-            aws_secret_access_key=opts["secret"],
-            region_name=opts["client_kwargs"].get("region_name", "us-east-1"),
-            config=Config(s3={"addressing_style": "path"}),
-        )
+    Before 06 this built a new boto3 / GCS / BlobServiceClient per call, which
+    charged the naive baseline client-construction time on every object and
+    made it look slower than it is. A real pair operator keeps one hook/client.
+    """
+    from .emulators import _native_client
+
+    key = key.lstrip("/")
+    client = _native_client(emu)
+    if emu.flavour == "s3":
         return client.get_object(Bucket=emu.bucket, Key=key)["Body"].read()
     if emu.flavour == "gcs":
-        from google.cloud import storage as gcs_storage
-
-        client = gcs_storage.Client(project=os.environ.get("GCS_PROJECT", "demo"))
         return client.bucket(emu.bucket).blob(key).download_as_bytes()
     if emu.flavour == "azure":
-        from azure.storage.blob import BlobServiceClient
-
-        client = BlobServiceClient.from_connection_string(
-            emu.storage_options["connection_string"]
-        )
         return client.get_container_client(emu.bucket).download_blob(key).readall()
     raise ValueError(emu.flavour)
 
