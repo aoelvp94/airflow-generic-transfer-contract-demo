@@ -166,6 +166,84 @@ class OracleToAzureDataLakeOperator(BaseOperator):
 '''
 
 
+THIN_NO_CAPS = """
+class BaseOperator:
+    pass
+
+class S3ToFTPOperator(BaseOperator):
+    def __init__(self, s3_bucket: str, s3_key: str, ftp_path: str,
+                 aws_conn_id: str = "aws_default", ftp_conn_id: str = "ftp_default", **kwargs):
+        super().__init__(**kwargs)
+
+    def execute(self, context):
+        pass
+"""
+
+OPTIONAL_PRE = """
+class BaseOperator:
+    pass
+
+class HiveToMySqlOperator(BaseOperator):
+    def __init__(self, sql: str, mysql_table: str,
+                 mysql_preoperator: str | None = None,
+                 mysql_postoperator: str | None = None, **kwargs):
+        super().__init__(**kwargs)
+
+    def execute(self, context):
+        pass
+"""
+
+DOCSTRING_ONLY = """
+class BaseOperator:
+    pass
+
+class DocOnlyToS3Operator(BaseOperator):
+    \"\"\"Docs mention COPY INTO Snowflake and UNLOAD for comparison only.\"\"\"
+
+    def __init__(self, s3_bucket: str, s3_key: str, **kwargs):
+        \"\"\"Also mentions Storage Transfer Service and Native Object Store.\"\"\"
+        super().__init__(**kwargs)
+
+    def execute(self, context):
+        return None
+"""
+
+OPTIONAL_SPLIT = """
+class BaseOperator:
+    pass
+
+class SqlToS3Operator(BaseOperator):
+    def __init__(self, query: str, s3_bucket: str, s3_key: str,
+                 max_rows_per_file: int = 0, groupby_kwargs: dict | None = None,
+                 page_size: int | None = None, replace: bool = False, **kwargs):
+        super().__init__(**kwargs)
+
+    def execute(self, context):
+        pass
+"""
+
+S3_LIST_BASE = """
+class BaseOperator:
+    pass
+
+class S3ListOperator(BaseOperator):
+    def __init__(self, bucket: str, prefix: str = "", delimiter: str = "", **kwargs):
+        super().__init__(**kwargs)
+
+    def execute(self, context):
+        pass
+"""
+
+S3_LIST_CHILD = """
+class S3ToSomethingOperator(S3ListOperator):
+    def __init__(self, dest_key: str, **kwargs):
+        super().__init__(**kwargs)
+
+    def execute(self, context):
+        pass
+"""
+
+
 @pytest.fixture
 def providers_root(tmp_path: Path) -> Path:
     """A tiny providers/ tree with one module per classification bucket."""
@@ -183,6 +261,12 @@ def providers_root(tmp_path: Path) -> Path:
         "microsoft/azure/src/airflow/providers/microsoft/azure/transfers/oracle_to_azure_data_lake.py",
         CSV_DELIMITER,
     )
+    _write(root, "amazon/src/airflow/providers/amazon/aws/transfers/s3_to_ftp.py", THIN_NO_CAPS)
+    _write(root, "apache/hive/src/airflow/providers/apache/hive/transfers/hive_to_mysql.py", OPTIONAL_PRE)
+    _write(root, "amazon/src/airflow/providers/amazon/aws/transfers/doc_only_to_s3.py", DOCSTRING_ONLY)
+    _write(root, "amazon/src/airflow/providers/amazon/aws/transfers/sql_to_s3.py", OPTIONAL_SPLIT)
+    _write(root, "amazon/src/airflow/providers/amazon/aws/operators/s3.py", S3_LIST_BASE)
+    _write(root, "amazon/src/airflow/providers/amazon/aws/transfers/s3_to_something.py", S3_LIST_CHILD)
     _write(
         root,
         "common/io/src/airflow/providers/common/io/operators/file_transfer.py",
@@ -229,7 +313,8 @@ def _records_by_name(providers_root: Path) -> dict[str, object]:
         rel = path.relative_to(providers_root).as_posix()
         module_texts[rel] = path.read_text(encoding="utf-8")
         records.extend(audit.parse_module(path, providers_root=providers_root))
-    audit.apply_inheritance(records, module_texts=module_texts)
+    external, _unresolved = audit.load_external_bases(providers_root, records)
+    audit.apply_inheritance(records, module_texts=module_texts, external_bases=external)
     return {r.class_name: r for r in records}, included, skipped
 
 
@@ -244,23 +329,27 @@ def test_discover_includes_transfers_and_file_transfer_skips_noise(providers_roo
     assert "0002_3_2_0_add_concurrency_to_edge_worker" in reasons
 
 
-def test_maps_cleanly_for_thin_file_pairs(providers_root: Path):
+def test_maps_cleanly_without_listing_or_overwrite(providers_root: Path):
     by_name, _, _ = _records_by_name(providers_root)
-    clean = by_name["LocalFilesystemToS3Operator"]
-    assert clean.classification == "maps_cleanly"
-    assert clean.kind == "file→file"
-    assert "replace" in clean.flags
-    listing = by_name["GCSToS3Operator"]
-    assert listing.classification == "maps_cleanly"
-    assert "wildcard_or_prefix" in listing.flags
-    assert "replace" in listing.flags
-    ft = by_name["FileTransferOperator"]
-    assert ft.classification == "maps_cleanly"
-    assert ft.kind == "file→file"
-    # CSV delimiter must not be mistaken for a listing delimiter, and stays clean.
+    # No prefix/replace/gzip — stays maps_cleanly.
+    thin = by_name["S3ToFTPOperator"]
+    assert thin.classification == "maps_cleanly"
+    assert thin.kind == "file→file"
     oracle = by_name["OracleToAzureDataLakeOperator"]
     assert oracle.classification == "maps_cleanly"
     assert "wildcard_or_prefix" not in oracle.flags
+    # replace / listing are capabilities, even with off defaults.
+    local = by_name["LocalFilesystemToS3Operator"]
+    assert local.classification == "needs_capability"
+    assert "replace" in local.classification_reasons
+    listing = by_name["GCSToS3Operator"]
+    assert listing.classification == "needs_capability"
+    assert "wildcard_or_prefix" in listing.flags
+    assert "replace" in listing.flags
+    ft = by_name["FileTransferOperator"]
+    assert ft.classification == "needs_capability"
+    assert "replace" in ft.classification_reasons
+    assert ft.kind == "file→file"
 
 
 def test_needs_capability_for_gzip_acl_and_server_side_copy(providers_root: Path):
@@ -306,5 +395,37 @@ def test_classify_priority_is_special_then_capability_then_clean():
         "special",
         ["partitioning_or_splitting"],
     )
-    assert audit.classify(["compression", "replace"]) == ("needs_capability", ["compression"])
-    assert audit.classify(["replace", "wildcard_or_prefix"]) == ("maps_cleanly", [])
+    assert audit.classify(["compression", "replace"]) == ("needs_capability", ["compression", "replace"])
+    assert audit.classify(["replace", "wildcard_or_prefix"]) == (
+        "needs_capability",
+        ["replace", "wildcard_or_prefix"],
+    )
+
+
+def test_optional_special_does_not_force_primary_special(providers_root: Path):
+    by_name, _, _ = _records_by_name(providers_root)
+    hive = by_name["HiveToMySqlOperator"]
+    assert "pre_post_operator_sql" in hive.optional_special
+    assert hive.classification == "maps_cleanly"
+    assert hive.classification_conservative == "special"
+    sqls3 = by_name["SqlToS3Operator"]
+    assert "partitioning_or_splitting" in sqls3.optional_special
+    # replace + pagination are capabilities; primary is not special.
+    assert sqls3.classification == "needs_capability"
+    assert sqls3.classification_conservative == "special"
+
+
+def test_docstrings_are_stripped_before_keyword_match(providers_root: Path):
+    by_name, _, _ = _records_by_name(providers_root)
+    doc = by_name["DocOnlyToS3Operator"]
+    assert "warehouse_copy_job" not in doc.flags
+    assert "server_side_copy" not in doc.flags
+    assert doc.classification == "maps_cleanly"
+
+
+def test_external_base_prefix_is_merged(providers_root: Path):
+    by_name, _, _ = _records_by_name(providers_root)
+    child = by_name["S3ToSomethingOperator"]
+    assert "prefix" in child.inherited_arg_names
+    assert "wildcard_or_prefix" in child.flags
+    assert child.classification == "needs_capability"

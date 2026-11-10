@@ -4,9 +4,11 @@
 Scans apache/airflow ``providers/**/transfers/`` (plus ``FileTransferOperator``)
 without importing Airflow. Stdlib only.
 
-Classification is heuristic and conservative: optional args still flag a class,
-and execute() bodies are only inspected for a small set of keyword patterns.
-See docs/PAIR_AUDIT.md for the rules and caveats.
+Classification is heuristic. Keyword matches run on source with module, class,
+and function docstrings stripped. Special flags that come only from off-default
+optional args are recorded as optional_special and do not force the primary
+bucket; a conservative view still counts them. Prefix/wildcard and replace are
+capabilities (listing, overwrite). See docs/PAIR_AUDIT.md.
 """
 from __future__ import annotations
 
@@ -555,11 +557,72 @@ CAPABILITY_FLAGS = frozenset(
         "object_retention",
         "upsert",
         "dest_encryption",
+        "wildcard_or_prefix",
+        "replace",
     }
 )
 
-# Informative flags that do not, on their own, change the bucket.
-INFORMATIONAL_FLAGS = frozenset({"wildcard_or_prefix", "replace", "openlineage"})
+# Prefix/wildcard (listing) and replace/overwrite are capabilities, not a free pass to maps_cleanly.
+# openlineage is still informational and does not, on its own, change the bucket.
+INFORMATIONAL_FLAGS = frozenset({"openlineage"})
+
+
+
+def source_without_docstrings(source: str) -> str:
+    """Return source with module/class/function docstrings removed (comments kept)."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return source
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.body and isinstance(node.body[0], ast.Expr):
+                val = node.body[0].value
+                if isinstance(val, ast.Constant) and isinstance(val.value, str):
+                    node.body.pop(0)
+                    if not node.body:
+                        node.body.append(ast.Pass())
+    try:
+        return ast.unparse(tree)
+    except Exception:
+        return source
+
+
+# Defaults that mean "feature off / not supplied". A missing default (required arg)
+# is *not* off. The string "None" is an explicit default of None.
+_OFF_DEFAULTS = frozenset(
+    {
+        "None",
+        "False",
+        "[]",
+        "{}",
+        "()",
+        "set()",
+        "frozenset()",
+        "''",
+        '""',
+        "0",
+        "0.0",
+    }
+)
+
+
+def is_off_default(default: str | None) -> bool:
+    """True iff the arg has an explicit off/empty default. Required args return False."""
+    if default is None:
+        return False
+    return default.strip() in _OFF_DEFAULTS
+
+
+@dataclass
+class FlagResult:
+    flags: list[str]
+    core_flags: list[str]
+    optional_flags: list[str]
+
+    @property
+    def optional_special(self) -> list[str]:
+        return [f for f in self.optional_flags if f in SPECIAL_FLAGS]
 
 
 def detect_flags(
@@ -570,31 +633,54 @@ def detect_flags(
     dest_system: str | None,
     has_deferrable_arg: bool,
     has_execute_complete: bool,
-) -> list[str]:
+    constructor_args: list[dict[str, str | None]] | None = None,
+) -> FlagResult:
     names = set(arg_names)
     methods_set = set(methods)
-    flags: set[str] = set()
+    defaults: dict[str, str | None] = {}
+    if constructor_args:
+        for a in constructor_args:
+            n = a.get("name")
+            if n and not str(n).startswith("*"):
+                defaults[n] = a.get("default")
+                names.add(n)
+
+    core: set[str] = set()
+    optional: set[str] = set()
 
     for flag, triggers in FLAG_ARG_RULES.items():
-        if names & triggers:
-            flags.add(flag)
+        present = names & triggers
+        if not present:
+            continue
+        if defaults and all(is_off_default(defaults.get(n)) for n in present):
+            optional.add(flag)
+        else:
+            core.add(flag)
+
+    # Method names, execute() source keywords, dest-system type, and a real
+    # execute_complete implementation are core semantics, not optional args.
     for flag, triggers in FLAG_METHOD_RULES.items():
         if methods_set & triggers:
-            flags.add(flag)
+            core.add(flag)
+    stripped = source_without_docstrings(source_text) if source_text else ""
     for flag, pattern in FLAG_SOURCE_RULES.items():
-        if pattern.search(source_text):
-            flags.add(flag)
+        if stripped and pattern.search(stripped):
+            core.add(flag)
 
     if dest_system in MESSAGE_SYSTEMS:
-        flags.add("notification")
-    if has_deferrable_arg or has_execute_complete or "deferrable" in names:
-        flags.add("deferrable")
+        core.add("notification")
+    if has_execute_complete or "execute_complete" in methods_set:
+        core.add("deferrable")
+    elif has_deferrable_arg or "deferrable" in names:
+        if defaults and is_off_default(defaults.get("deferrable", "False")):
+            # deferrable=False default: the API offers it, but it is optional.
+            optional.add("deferrable")
+        else:
+            core.add("deferrable")
 
-    # "schema" is ambiguous (Redshift namespace vs output schema). Only treat it
-    # as a sidecar when the destination is a file and a schema_* arg already
-    # didn't fire — skip the bare name.
-
-    return sorted(flags)
+    optional -= core
+    flags = sorted(core | optional)
+    return FlagResult(flags=flags, core_flags=sorted(core), optional_flags=sorted(optional))
 
 
 def classify(flags: Iterable[str]) -> tuple[str, list[str]]:
@@ -609,18 +695,26 @@ def classify(flags: Iterable[str]) -> tuple[str, list[str]]:
     return "maps_cleanly", []
 
 
+def classify_views(result: FlagResult) -> tuple[str, list[str], str, list[str]]:
+    """Primary view ignores optional_special; conservative view does not."""
+    optional_special = set(result.optional_special)
+    primary_flags = set(result.flags) - optional_special
+    primary, preasons = classify(primary_flags)
+    conservative, creasons = classify(result.flags)
+    return primary, preasons, conservative, creasons
+
+
 # ---------------------------------------------------------------------------
 # Records
 # ---------------------------------------------------------------------------
 
-BASE_OPERATOR_NAMES = frozenset(
-    {
-        "BaseOperator",
-        "BaseSQLOperator",
-        "S3ListOperator",
-        "ADLSListOperator",
-    }
-)
+# Airflow core, not present in a providers/-only checkout.
+CORE_ONLY_BASES = frozenset({"BaseOperator"})
+
+
+def bare_base_name(name: str) -> str:
+    """AwsBaseOperator[S3Hook] -> AwsBaseOperator."""
+    return re.sub(r"\[.*", "", name).strip()
 
 
 def is_operator_class(name: str) -> bool:
@@ -648,12 +742,38 @@ class OperatorRecord:
     base_classes: list[str]
     methods: list[str]
     flags: list[str] = field(default_factory=list)
+    core_flags: list[str] = field(default_factory=list)
+    optional_flags: list[str] = field(default_factory=list)
+    optional_special: list[str] = field(default_factory=list)
     classification: str = ""
     classification_reasons: list[str] = field(default_factory=list)
+    classification_conservative: str = ""
+    classification_conservative_reasons: list[str] = field(default_factory=list)
+    capability_count: int = 0
+    unresolved_bases: list[str] = field(default_factory=list)
 
     @property
     def arg_names(self) -> list[str]:
         return [a["name"] or "" for a in self.constructor_args]
+
+    def apply_flag_result(self, result: FlagResult, *, extra: Iterable[str] = ()) -> None:
+        extra_set = set(extra)
+        self.flags = sorted(set(result.flags) | extra_set)
+        self.core_flags = sorted(set(result.core_flags) | extra_set)
+        self.optional_flags = list(result.optional_flags)
+        self.optional_special = list(result.optional_special)
+        primary, preasons, conservative, creasons = classify_views(
+            FlagResult(
+                flags=self.flags,
+                core_flags=self.core_flags,
+                optional_flags=self.optional_flags,
+            )
+        )
+        self.classification = primary
+        self.classification_reasons = preasons
+        self.classification_conservative = conservative
+        self.classification_conservative_reasons = creasons
+        self.capability_count = len([f for f in self.flags if f in CAPABILITY_FLAGS])
 
 
 # ---------------------------------------------------------------------------
@@ -694,38 +814,33 @@ def parse_module(path: Path, *, providers_root: Path) -> list[OperatorRecord]:
         has_def_arg = any(a["name"] == "deferrable" for a in args)
         has_complete = "execute_complete" in methods
         declared_arg_names = [a["name"] or "" for a in args if a["name"] and not a["name"].startswith("*")]
-        flags = detect_flags(
+        result = detect_flags(
             arg_names=declared_arg_names,
             methods=methods,
             source_text=text,
             dest_system=dst,
             has_deferrable_arg=has_def_arg,
             has_execute_complete=has_complete,
+            constructor_args=args,
         )
-        if openlineage:
-            flags = sorted(set(flags) | {"openlineage"})
-        classification, reasons = classify(flags)
-        records.append(
-            OperatorRecord(
-                provider=provider,
-                module_path=rel,
-                class_name=node.name,
-                is_base=is_base_operator(node.name),
-                source_system=src,
-                dest_system=dst,
-                kind=kind,
-                constructor_args=args,
-                inherited_arg_names=[],
-                template_fields=template_fields,
-                deferrable=has_def_arg or has_complete,
-                openlineage_methods=openlineage,
-                base_classes=bases,
-                methods=methods,
-                flags=flags,
-                classification=classification,
-                classification_reasons=reasons,
-            )
+        rec = OperatorRecord(
+            provider=provider,
+            module_path=rel,
+            class_name=node.name,
+            is_base=is_base_operator(node.name),
+            source_system=src,
+            dest_system=dst,
+            kind=kind,
+            constructor_args=args,
+            inherited_arg_names=[],
+            template_fields=template_fields,
+            deferrable=has_def_arg or has_complete,
+            openlineage_methods=openlineage,
+            base_classes=bases,
+            methods=methods,
         )
+        rec.apply_flag_result(result, extra={"openlineage"} if openlineage else ())
+        records.append(rec)
     return records
 
 
@@ -765,32 +880,122 @@ def _resolve_starred_templates(records: list[OperatorRecord]) -> None:
                 changed = True or resolved_any
 
 
-def apply_inheritance(records: list[OperatorRecord], *, module_texts: dict[str, str]) -> None:
-    by_name = {r.class_name: r for r in records}
+def index_operator_classes(providers_root: Path) -> dict[str, list[Path]]:
+    """Map class name -> definition paths under providers/ (tests excluded)."""
+    found: dict[str, list[Path]] = {}
+    for path in providers_root.rglob("*.py"):
+        if _is_test_path(path):
+            continue
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        except (SyntaxError, UnicodeDecodeError):
+            continue
+        for node in tree.body:
+            if isinstance(node, ast.ClassDef) and is_operator_class(node.name):
+                found.setdefault(node.name, []).append(path)
+    return found
 
-    def parent_chain(rec: OperatorRecord) -> list[OperatorRecord]:
+
+def load_external_bases(
+    providers_root: Path,
+    records: list[OperatorRecord],
+) -> tuple[dict[str, OperatorRecord], list[dict[str, str]]]:
+    """Parse non-transfer base classes resolvable inside providers/.
+
+    External bases are used only for inheritance; they are not added to the
+    audit corpus. Bases that cannot be resolved are returned for the report.
+    """
+    index = index_operator_classes(providers_root)
+    known = {r.class_name for r in records}
+    external: dict[str, OperatorRecord] = {}
+    unresolved: list[dict[str, str]] = []
+    seen_unresolved: set[str] = set()
+    pending: list[str] = []
+    for r in records:
+        pending.extend(r.base_classes)
+
+    while pending:
+        raw = pending.pop(0)
+        name = bare_base_name(raw)
+        if not name or name in known or name in external:
+            continue
+        if name in CORE_ONLY_BASES:
+            if name not in seen_unresolved:
+                seen_unresolved.add(name)
+                unresolved.append(
+                    {
+                        "class_name": name,
+                        "reason": "Airflow core; not present in a providers/-only checkout",
+                    }
+                )
+            continue
+        paths = index.get(name, [])
+        if not paths:
+            if name not in seen_unresolved:
+                seen_unresolved.add(name)
+                unresolved.append(
+                    {"class_name": name, "reason": "no class definition found under providers/"}
+                )
+            continue
+        recs = parse_module(paths[0], providers_root=providers_root)
+        match = next((r for r in recs if r.class_name == name), None)
+        if match is None:
+            if name not in seen_unresolved:
+                seen_unresolved.add(name)
+                unresolved.append(
+                    {
+                        "class_name": name,
+                        "reason": f"file {paths[0].relative_to(providers_root).as_posix()} has no such Operator class",
+                    }
+                )
+            continue
+        external[name] = match
+        pending.extend(match.base_classes)
+    return external, unresolved
+
+
+def apply_inheritance(
+    records: list[OperatorRecord],
+    *,
+    module_texts: dict[str, str],
+    external_bases: dict[str, OperatorRecord] | None = None,
+) -> None:
+    by_name = {r.class_name: r for r in records}
+    if external_bases:
+        by_name.update(external_bases)
+
+    def parent_chain(rec: OperatorRecord) -> tuple[list[OperatorRecord], list[str]]:
         out: list[OperatorRecord] = []
+        unresolved: list[str] = []
         seen: set[str] = set()
         stack = list(rec.base_classes)
         while stack:
-            name = stack.pop(0)
-            if name in seen or name in BASE_OPERATOR_NAMES:
+            raw = stack.pop(0)
+            name = bare_base_name(raw)
+            if not name or name in seen:
                 continue
             seen.add(name)
+            if name in CORE_ONLY_BASES:
+                unresolved.append(name)
+                continue
             parent = by_name.get(name)
             if parent is None:
+                unresolved.append(name)
                 continue
             out.append(parent)
             stack.extend(parent.base_classes)
-        return out
+        return out, unresolved
 
-    _resolve_starred_templates(records)
+    # Include external bases when resolving *Parent.template_fields.
+    _resolve_starred_templates(list(records) + list((external_bases or {}).values()))
 
     for rec in records:
+        parents, unresolved = parent_chain(rec)
+        rec.unresolved_bases = unresolved
         child_names = {a["name"] for a in rec.constructor_args}
         inherited: list[dict[str, str | None]] = []
         inherited_names: list[str] = []
-        for parent in parent_chain(rec):
+        for parent in parents:
             for arg in parent.constructor_args:
                 n = arg["name"]
                 if not n or n.startswith("*") or n in child_names:
@@ -802,7 +1007,7 @@ def apply_inheritance(records: list[OperatorRecord], *, module_texts: dict[str, 
             rec.constructor_args = inherited + rec.constructor_args
             rec.inherited_arg_names = inherited_names
         text = module_texts.get(rec.module_path, "")
-        rec.flags = detect_flags(
+        result = detect_flags(
             arg_names=[
                 a["name"] or ""
                 for a in rec.constructor_args
@@ -813,10 +1018,9 @@ def apply_inheritance(records: list[OperatorRecord], *, module_texts: dict[str, 
             dest_system=rec.dest_system,
             has_deferrable_arg=rec.deferrable,
             has_execute_complete="execute_complete" in rec.methods,
+            constructor_args=rec.constructor_args,
         )
-        if rec.openlineage_methods:
-            rec.flags = sorted(set(rec.flags) | {"openlineage"})
-        rec.classification, rec.classification_reasons = classify(rec.flags)
+        rec.apply_flag_result(result, extra={"openlineage"} if rec.openlineage_methods else ())
 
 
 # ---------------------------------------------------------------------------
@@ -847,6 +1051,58 @@ def git_commit_iso(repo: Path) -> str:
 # ---------------------------------------------------------------------------
 
 CLASSIFICATION_ORDER = ("maps_cleanly", "needs_capability", "special")
+
+# First published audit snapshot (commit on 07-transfer-pair-audit) for before/after.
+PREVIOUS_AUDIT_REF = "bdf2cbe"
+# file→file + record↔file (no SQL endpoint).
+GROUP_A_KINDS = frozenset({"file→file", "record→file", "file→record"})
+CAPABILITY_HEAVY_THRESHOLD = 4
+
+
+def kind_group(kind: str) -> str:
+    if kind in GROUP_A_KINDS:
+        return "A"
+    if "sql" in kind:
+        return "B"
+    return "other"
+
+
+def load_previous_audit(repo_root: Path, ref: str = PREVIOUS_AUDIT_REF) -> dict[str, Any] | None:
+    try:
+        raw = subprocess.check_output(
+            ["git", "show", f"{ref}:bench-out/PAIR_AUDIT.json"],
+            cwd=repo_root,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+        return json.loads(raw)
+    except (subprocess.CalledProcessError, json.JSONDecodeError, FileNotFoundError):
+        return None
+
+
+def compute_shifts(records: list[OperatorRecord], previous: dict[str, Any]) -> list[dict[str, Any]]:
+    prev = {
+        o["class_name"]: o["classification"]
+        for o in previous.get("operators", [])
+        if not o.get("is_base")
+    }
+    shifts: list[dict[str, Any]] = []
+    for r in _concrete(records):
+        old = prev.get(r.class_name)
+        if old is not None and old != r.classification:
+            shifts.append(
+                {
+                    "class_name": r.class_name,
+                    "kind": r.kind,
+                    "from": old,
+                    "to": r.classification,
+                    "reasons": r.classification_reasons,
+                    "optional_special": r.optional_special,
+                    "capability_count": r.capability_count,
+                    "flags": r.flags,
+                }
+            )
+    return shifts
 
 
 def _concrete(records: Iterable[OperatorRecord]) -> list[OperatorRecord]:
@@ -888,14 +1144,42 @@ def summarize(records: list[OperatorRecord]) -> dict[str, Any]:
             )
         return rows
 
+    by_cons = Counter(r.classification_conservative for r in concrete)
+    optional_special_ops = [r for r in concrete if r.optional_special]
+    heavy = [r for r in concrete if r.capability_count >= CAPABILITY_HEAVY_THRESHOLD]
+
+    def group_block(label: str, pred) -> dict[str, Any]:
+        subset = [r for r in concrete if pred(r)]
+        n = len(subset)
+        c = Counter(r.classification for r in subset)
+        return {
+            "label": label,
+            "operators": n,
+            "classification": {
+                k: {"count": c.get(k, 0), "pct": round(_pct(c.get(k, 0), n), 1)}
+                for k in CLASSIFICATION_ORDER
+            },
+            "by_kind": [
+                {
+                    "kind": kind,
+                    "operators": sum(1 for r in subset if r.kind == kind),
+                }
+                for kind, _ in Counter(r.kind for r in subset).most_common()
+            ],
+        }
+
+    def class_block(counter: Counter[str], n: int) -> dict[str, Any]:
+        return {
+            label: {"count": counter.get(label, 0), "pct": round(_pct(counter.get(label, 0), n), 1)}
+            for label in CLASSIFICATION_ORDER
+        }
+
     return {
         "operator_classes_including_bases": len(records),
         "base_classes": len(records) - total,
         "concrete_operators": total,
-        "classification": {
-            label: {"count": by_class.get(label, 0), "pct": round(_pct(by_class.get(label, 0), total), 1)}
-            for label in CLASSIFICATION_ORDER
-        },
+        "classification": class_block(by_class, total),
+        "classification_conservative": class_block(by_cons, total),
         "by_kind": breakdown(by_kind, key="kind"),
         "by_provider": breakdown(by_provider, key="provider"),
         "flag_counts": flag_counts_all.most_common(),
@@ -904,6 +1188,29 @@ def summarize(records: list[OperatorRecord]) -> dict[str, Any]:
             for f, n in flag_counts.most_common()
             if f in SPECIAL_FLAGS
         ],
+        "optional_special_operators": [
+            {"class_name": r.class_name, "optional_special": r.optional_special, "classification": r.classification, "classification_conservative": r.classification_conservative}
+            for r in optional_special_ops
+        ],
+        "capability_heavy_threshold": CAPABILITY_HEAVY_THRESHOLD,
+        "capability_heavy": {
+            "count": len(heavy),
+            "operators": [
+                {"class_name": r.class_name, "kind": r.kind, "capability_count": r.capability_count, "flags": [f for f in r.flags if f in CAPABILITY_FLAGS]}
+                for r in sorted(heavy, key=lambda r: (-r.capability_count, r.class_name))
+            ],
+        },
+        "split": {
+            "A_file_or_record": group_block(
+                "file/record (file→file, record→file, file→record)",
+                lambda r: kind_group(r.kind) == "A",
+            ),
+            "B_sql": group_block(
+                "touches SQL (any kind with a sql endpoint)",
+                lambda r: kind_group(r.kind) == "B",
+            ),
+            "other": group_block("other kinds", lambda r: kind_group(r.kind) == "other"),
+        },
     }
 
 
@@ -927,7 +1234,14 @@ def write_csv(path: Path, records: list[OperatorRecord]) -> None:
         "kind",
         "classification",
         "classification_reasons",
+        "classification_conservative",
+        "classification_conservative_reasons",
         "flags",
+        "core_flags",
+        "optional_flags",
+        "optional_special",
+        "capability_count",
+        "unresolved_bases",
         "constructor_args",
         "inherited_arg_names",
         "template_fields",
@@ -950,7 +1264,14 @@ def write_csv(path: Path, records: list[OperatorRecord]) -> None:
                     "kind": r.kind,
                     "classification": r.classification,
                     "classification_reasons": "|".join(r.classification_reasons),
+                    "classification_conservative": r.classification_conservative,
+                    "classification_conservative_reasons": "|".join(r.classification_conservative_reasons),
                     "flags": "|".join(r.flags),
+                    "core_flags": "|".join(r.core_flags),
+                    "optional_flags": "|".join(r.optional_flags),
+                    "optional_special": "|".join(r.optional_special),
+                    "capability_count": r.capability_count,
+                    "unresolved_bases": "|".join(r.unresolved_bases),
                     "constructor_args": json.dumps(r.constructor_args, ensure_ascii=False),
                     "inherited_arg_names": "|".join(r.inherited_arg_names),
                     "template_fields": "|".join(r.template_fields),
@@ -1211,13 +1532,13 @@ def write_markdown(
         )
     a(
         f"**{c['maps_cleanly']['pct']:.1f}%** map cleanly onto source-conn + source-location, "
-        f"dest-conn + dest-location, replace/overwrite, and generic format/batch options. "
-        f"**{c['needs_capability']['pct']:.1f}%** would map if the contract grows an optional "
-        f"capability (compression, ACL/extra_args, server-side copy, schema sidecar, "
-        f"move, pagination, deferrable, dest encryption, …). **{c['special']['pct']:.1f}%** carry "
-        "semantics a generic operator should not absorb (partitioning / dest-table DDL / "
-        "warehouse COPY-UNLOAD-extract jobs / custom callables / Slack notifications / "
-        "pre-post SQL)."
+        f"dest-conn + dest-location, and generic format/batch options (no listing, overwrite, "
+        f"or other capabilities). **{c['needs_capability']['pct']:.1f}%** would map if the "
+        f"contract grows optional capabilities (listing, overwrite, compression, ACL, "
+        f"server-side copy, schema sidecar, move, pagination, deferrable, …). "
+        f"**{c['special']['pct']:.1f}%** carry *core* semantics a generic operator should not "
+        "absorb (partitioning / dest-table DDL / warehouse COPY-UNLOAD-extract jobs / "
+        "required custom callables / Slack notifications)."
     )
     a("")
     a(
@@ -1226,13 +1547,188 @@ def write_markdown(
         f"capabilities exist.{file_note}"
     )
     a("")
+
+    # Conservative view (optional_special still forces special)
+    cons = summary.get("classification_conservative") or {}
+    a("### Conservative view (optional special flags still force `special`)")
+    a("")
+    a("The primary table above ignores special flags that come *only* from off-default")
+    a("optional arguments (`optional_special`). This conservative table is the older rule:")
+    a("those flags still force `special`.")
+    a("")
+    if cons:
+        a(f"| Classification | Concrete operators | Share of {total} |")
+        a("|---|---:|---:|")
+        for label in CLASSIFICATION_ORDER:
+            a(f"| `{label}` | {cons[label]['count']} | {cons[label]['pct']:.1f}% |")
+        a("")
+
+    # Before / after
+    prev = summary.get("previous_classification") or {}
+    shifts = summary.get("shifts") or []
+    a(f"### Before / after vs `{summary.get('previous_ref', PREVIOUS_AUDIT_REF)}`")
+    a("")
+    if prev:
+        a("Previous published snapshot (primary numbers at that commit: 16 / 36 / 32 of 84):")
+        a("")
+        a("| View | maps_cleanly | needs_capability | special |")
+        a("|---|---:|---:|---:|")
+        a(
+            f"| Previous (`{summary.get('previous_ref')}`) | "
+            f"{prev['maps_cleanly']['count']} ({prev['maps_cleanly']['pct']:.1f}%) | "
+            f"{prev['needs_capability']['count']} ({prev['needs_capability']['pct']:.1f}%) | "
+            f"{prev['special']['count']} ({prev['special']['pct']:.1f}%) |"
+        )
+        a(
+            f"| This run, primary | {c['maps_cleanly']['count']} ({c['maps_cleanly']['pct']:.1f}%) | "
+            f"{c['needs_capability']['count']} ({c['needs_capability']['pct']:.1f}%) | "
+            f"{c['special']['count']} ({c['special']['pct']:.1f}%) |"
+        )
+        if cons:
+            a(
+                f"| This run, conservative | {cons['maps_cleanly']['count']} ({cons['maps_cleanly']['pct']:.1f}%) | "
+                f"{cons['needs_capability']['count']} ({cons['needs_capability']['pct']:.1f}%) | "
+                f"{cons['special']['count']} ({cons['special']['pct']:.1f}%) |"
+            )
+        a("")
+        a(
+            "Rule changes since that snapshot: docstrings are stripped before keyword "
+            "matches; prefix/wildcard and replace/overwrite are capabilities (not a free "
+            "pass to `maps_cleanly`); special flags that come only from off-default "
+            "optional args are `optional_special` and do not force the primary bucket; "
+            "inheritance now also merges base classes resolvable under `providers/` "
+            f"({', '.join(f'`{n}`' for n in summary.get('resolved_external_bases') or []) or 'none resolved'})."
+        )
+        a("")
+        a(f"**{len(shifts)}** concrete operators changed primary bucket:")
+        a("")
+        if shifts:
+            shift_rows = []
+            for s in shifts:
+                why = []
+                if s["to"] == "needs_capability" and s["from"] == "maps_cleanly":
+                    why.append("listing/overwrite (or other cap) now counted")
+                if s["to"] != "special" and s["from"] == "special" and s.get("optional_special"):
+                    why.append("optional_special=" + ",".join(s["optional_special"]))
+                if s["to"] == "special" and s["from"] != "special":
+                    why.append("new core special flag: " + ",".join(s.get("reasons") or []))
+                if not why:
+                    why.append("reasons=" + ",".join(s.get("reasons") or []) or "see flags")
+                shift_rows.append(
+                    [f"`{s['class_name']}`", s["kind"], s["from"], s["to"], "; ".join(why)]
+                )
+            a(_md_table(["Operator", "Kind", "From", "To", "Why"], shift_rows))
+            a("")
+    else:
+        a("No previous snapshot was found in git; before/after numbers are not computed.")
+        a("")
+
+    # Split view
+    a("## Split view")
+    a("")
+    a("- **Group A** — file/record transfers with no SQL endpoint: `file→file`, `record→file`, `file→record`.")
+    a("- **Group B** — anything that touches SQL (kinds whose source or dest category is `sql`).")
+    a("")
+    split = summary.get("split") or {}
+    split_rows = []
+    for key, title in (
+        ("A_file_or_record", "A — file/record"),
+        ("B_sql", "B — touches SQL"),
+        ("other", "Other"),
+    ):
+        block = split.get(key) or {}
+        n = block.get("operators", 0)
+        cc = block.get("classification") or {}
+        if key == "other" and n == 0:
+            continue
+        split_rows.append(
+            [
+                title,
+                n,
+                cc.get("maps_cleanly", {}).get("count", 0),
+                cc.get("needs_capability", {}).get("count", 0),
+                cc.get("special", {}).get("count", 0),
+                f"{cc.get('maps_cleanly', {}).get('pct', 0):.1f}%",
+            ]
+        )
+    a(_md_table(
+        ["Group", "Operators", "maps_cleanly", "needs_capability", "special", "maps_cleanly %"],
+        split_rows,
+    ))
+    a("")
+
+    # Capability-heavy
+    heavy = summary.get("capability_heavy") or {}
+    a(f"## Capability-heavy operators (≥ {summary.get('capability_heavy_threshold', 4)} capabilities)")
+    a("")
+    a(
+        f"**{heavy.get('count', 0)}** concrete operators expose "
+        f"{summary.get('capability_heavy_threshold', 4)} or more capability flags "
+        "(listing, overwrite, compression, …). These are still `needs_capability` "
+        "or `special`; the count is about contract surface area, not a third bucket."
+    )
+    a("")
+    if heavy.get("operators"):
+        a(_md_table(
+            ["Operator", "Kind", "Capability count", "Capabilities"],
+            [
+                [f"`{o['class_name']}`", o["kind"], o["capability_count"], ", ".join(f"`{x}`" for x in o["flags"])]
+                for o in heavy["operators"]
+            ],
+        ))
+        a("")
+
+    # Inheritance resolution
+    a("## Inheritance resolution")
+    a("")
+    resolved = summary.get("resolved_external_bases") or []
+    unresolved = summary.get("unresolved_bases") or []
+    a(
+        "Constructor args and `template_fields` from transfer-module bases are merged as before. "
+        "This run also loads base classes found under `providers/` (for example "
+        "`BaseSQLOperator`, `S3ListOperator`, `ADLSListOperator`, and `AwsBaseOperator`)."
+    )
+    a("")
+    if resolved:
+        a("Resolved non-transfer bases: " + ", ".join(f"`{n}`" for n in resolved) + ".")
+        a("")
+    if unresolved:
+        a("Unresolved bases (not merged):")
+        a("")
+        for u in unresolved:
+            a(f"- `{u['class_name']}` — {u['reason']}")
+        a("")
+
+    opt_ops = summary.get("optional_special_operators") or []
+    a("## Optional special flags")
+    a("")
+    a(
+        f"**{len(opt_ops)}** concrete operators have `optional_special` flags (special "
+        "semantics present only as off-default optional constructor args, with no core "
+        "method/source cue). They stay out of the primary `special` bucket unless another "
+        "core special flag is present. The conservative view still counts them as `special`."
+    )
+    a("")
+    if opt_ops:
+        a(_md_table(
+            ["Operator", "optional_special", "Primary", "Conservative"],
+            [
+                [f"`{o['class_name']}`", ", ".join(f"`{x}`" for x in o["optional_special"]), o["classification"], o["classification_conservative"]]
+                for o in opt_ops
+            ],
+        ))
+        a("")
+
     a("## Classification rules")
     a("")
     a("Rules are data-driven in `scripts/audit_transfers.py` (`FLAG_ARG_RULES`,")
     a("`FLAG_METHOD_RULES`, `FLAG_SOURCE_RULES`, `SPECIAL_FLAGS`, `CAPABILITY_FLAGS`).")
     a("Flags are collected first; the bucket is then assigned in this order:")
     a("")
-    a("1. **`special`** if any special flag is present:")
+    a("1. **`special`** (primary) if any *core* special flag is present. A flag is core")
+    a("   when it comes from a required or on-by-default constructor arg, a method name,")
+    a("   an `execute()` source keyword (docstrings stripped first), or the destination")
+    a("   system itself (Slack). Core special flags:")
     a("   - `partitioning_or_splitting` — operator-owned output layout or size-based file splitting")
     a("     (`partition_columns`, `max_rows_per_file`, `approx_max_file_size_bytes`, Hive `partition`, …)")
     a("   - `dest_table_ddl` — `create` / `recreate` / `tblproperties` / `field_dict`")
@@ -1244,16 +1740,20 @@ def write_markdown(
     a("   - `pre_post_operator_sql` — `mysql_preoperator` / `postoperator` wrapping the transfer")
     a("   - `point_in_time_export` — DynamoDB PITR export API")
     a("   - `teradata_nos_auth` — Teradata AUTHORIZATION / NOS load path")
-    a("2. Else **`needs_capability`** if any capability flag is present:")
+    a("   Special flags that appear only as off-default optional args are stored as")
+    a("   `optional_special` and do **not** force the primary bucket.")
+    a("2. Else **`needs_capability`** if any capability flag is present, including")
+    a("   optional ones (the API exposes the capability even when the default is off):")
+    a("   - `wildcard_or_prefix` (listing), `replace` (overwrite),")
     a("   - `compression`, `dest_encryption`, `acl_or_extra_args`, `server_side_copy`, `schema_sidecar`,")
     a("     `move_semantics`, `incremental_filter`, `path_layout`, `pagination`,")
     a("     `bulk_load`, `deferrable`, `xcom_side_channel`, `object_retention`, `upsert`")
-    a("3. Else **`maps_cleanly`**. Prefix/wildcard listing and `replace`/`overwrite` alone")
-    a("   stay in this bucket: a file contract is expected to cover them.")
+    a("3. Else **`maps_cleanly`**.")
     a("")
-    a("Constructor args declared on a parsed transfer base class are merged into")
-    a("subclasses before classification (so `MySQLToGCSOperator` inherits")
-    a("`partition_columns` from `BaseSQLToGCSOperator` and is `special`).")
+    a("Constructor args declared on a parsed transfer base class, and on other Operator")
+    a("bases found under `providers/`, are merged into subclasses before classification")
+    a("(so `MySQLToGCSOperator` inherits `partition_columns` from `BaseSQLToGCSOperator`")
+    a("and is `special`).")
     a("")
     a("## Per-kind breakdown (concrete operators)")
     a("")
@@ -1305,15 +1805,20 @@ def write_markdown(
     a("")
     a("- **Static AST only.** The script does not import Airflow or run operators.")
     a("  Behaviour that lives only in `execute()` without a distinctive argument,")
-    a("  method name, or source keyword can be missed — or a keyword in a docstring")
-    a("  can over-flag.")
-    a("- **Optional args still flag the class.** `DynamoDBToS3Operator` is `special`")
-    a("  because it *can* run a point-in-time export, even if most callers only scan.")
-    a("- **Inheritance is resolved only among transfer modules.** Args declared on")
-    a("  `S3ListOperator`, `ADLSListOperator`, or `BaseSQLOperator` are not merged.")
+    a("  method name, or source keyword can be missed. Module/class/function docstrings")
+    a("  are stripped before keyword matching; comments are not.")
+    a("- **Optional special args no longer force the primary `special` bucket.** They are")
+    a("  listed as `optional_special`. A non-off default still counts as core (for example")
+    a("  `approx_max_file_size_bytes=1900000000` keeps the SQL-to-GCS family special;")
+    a("  `process_func=_convert_item_to_json_bytes` keeps `DynamoDBToS3Operator` special).")
+    a("  The conservative table is the previous, harsher rule.")
+    a("- **Inheritance is merged for Operator bases found under `providers/`.** `BaseOperator`")
+    a("  (Airflow core) is unresolved in a providers-only checkout and is reported as such.")
     a("- **`schema` as a bare argument is not treated as a sidecar** (it often means")
     a("  a SQL namespace). Sidecars are `schema_filename` / `schema_fields` / `schema_object`.")
-    a("- **File→file with gzip/ACL is `needs_capability`, not `maps_cleanly`.** Those")
+    a("- **Listing (`wildcard_or_prefix`) and overwrite (`replace`) are capabilities.**")
+    a("  An operator whose only extra args are prefix/replace is `needs_capability`, not `maps_cleanly`.")
+    a("- **File→file with gzip/ACL/move/listing is `needs_capability`, not `maps_cleanly`.** Those")
     a("  operators are still first-wave candidates once the file contract exposes the capability.")
     a("- **Deferrable support is a capability flag**, even when the rest of the args are generic,")
     a("  because a generic operator would need a generic trigger.")
@@ -1325,6 +1830,7 @@ def write_markdown(
     a("- `bench-out/PAIR_AUDIT.csv` — one row per operator class")
     a("- `bench-out/PAIR_AUDIT.json` — same data plus the summary block")
     a("- `docs/PAIR_AUDIT.md` — this report")
+    a("- `just rank-capabilities` — sole-blocker / total-any / greedy set-cover over the CSV")
     a("")
 
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1398,7 +1904,8 @@ def audit(airflow_root: Path) -> tuple[list[OperatorRecord], dict[str, Any], dic
         rel = path.relative_to(providers_root).as_posix()
         module_texts[rel] = path.read_text(encoding="utf-8")
         records.extend(parse_module(path, providers_root=providers_root))
-    apply_inheritance(records, module_texts=module_texts)
+    external, unresolved = load_external_bases(providers_root, records)
+    apply_inheritance(records, module_texts=module_texts, external_bases=external)
     records.sort(key=lambda r: (r.provider, r.module_path, r.class_name))
 
     transfer_modules = sorted(
@@ -1415,8 +1922,23 @@ def audit(airflow_root: Path) -> tuple[list[OperatorRecord], dict[str, Any], dic
         "included_extra": included_extra,
         "skipped": finalized_skipped,
         "included_count": len(included),
+        "unresolved_bases": unresolved,
+        "resolved_external_bases": sorted(external),
     }
-    return records, summarize(records), meta
+    repo_root = Path(__file__).resolve().parents[1]
+    previous = load_previous_audit(repo_root)
+    summary = summarize(records)
+    summary["unresolved_bases"] = unresolved
+    summary["resolved_external_bases"] = sorted(external)
+    summary["previous_ref"] = PREVIOUS_AUDIT_REF
+    if previous and previous.get("summary"):
+        prev_c = previous["summary"].get("classification", {})
+        summary["previous_classification"] = prev_c
+        summary["shifts"] = compute_shifts(records, previous)
+    else:
+        summary["previous_classification"] = None
+        summary["shifts"] = []
+    return records, summary, meta
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1477,12 +1999,21 @@ def main(argv: list[str] | None = None) -> int:
     c = summary["classification"]
     print(f"Airflow SHA: {meta['sha']}")
     print(f"transfers/ modules: {meta['transfer_module_count']}")
+    cons = summary.get("classification_conservative") or {}
     print(
         f"concrete operators: {len(concrete)}  "
         f"maps_cleanly={c['maps_cleanly']['count']} ({c['maps_cleanly']['pct']}%)  "
         f"needs_capability={c['needs_capability']['count']} ({c['needs_capability']['pct']}%)  "
         f"special={c['special']['count']} ({c['special']['pct']}%)"
     )
+    if cons:
+        print(
+            "conservative: "
+            f"maps_cleanly={cons['maps_cleanly']['count']}  "
+            f"needs_capability={cons['needs_capability']['count']}  "
+            f"special={cons['special']['count']}"
+        )
+    print(f"shifts vs {summary.get('previous_ref')}: {len(summary.get('shifts') or [])}")
     print(f"wrote {args.csv}")
     print(f"wrote {args.json}")
     print(f"wrote {args.md}")
