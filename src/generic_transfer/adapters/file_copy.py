@@ -258,63 +258,45 @@ def server_side_copy_same_provider(
 
     S3: copy_object. GCS: rewrite / copy_blob. Azure: start_copy_from_url.
     Falls back to raising NotImplementedError when unsupported.
+
+    Marker handling matches the read/write path: one ``list_transfer_entries``
+    listing, no per-key ``is_folder_marker`` / ``info()``. The native SDK
+    client is reused for every key (via ``_native_client``), not rebuilt
+    inside the loop.
     """
-    from generic_transfer.adapters.emulators import list_keys_native
-    from generic_transfer.adapters.file_sink import is_folder_marker
+    from generic_transfer.adapters.emulators import _native_client
+    from generic_transfer.adapters.file_sink import list_transfer_entries
 
     counter = counter or RequestCounter()
-    keys = list_keys_native(source_emu, source_prefix)
+    base = f"{source_emu.bucket}/{source_prefix}".rstrip("/")
+    entries = list_transfer_entries(source_emu.fs, base)
     counter.bump("list", 1)
     copied: list[str] = []
     skipped: list[str] = []
-    for key in keys:
-        # Skip markers via size/children on fsspec view when possible.
-        full = f"{source_emu.bucket}/{key}"
-        try:
-            if is_folder_marker(source_emu.fs, full):
-                skipped.append(key)
-                continue
-        except Exception:
-            if key.endswith("/") :
-                skipped.append(key)
-                continue
-        rel = key[len(source_prefix) :].lstrip("/") if key.startswith(source_prefix) else key
+    client = _native_client(source_emu)
+    for entry in entries:
+        full_key = entry["name"]
+        rel = _rel_key(full_key, source_prefix, source_emu.bucket)
         dest_key = f"{dest_prefix.rstrip('/')}/{rel}" if dest_prefix else rel
+        src_key = (
+            full_key[len(source_emu.bucket) + 1 :]
+            if full_key.startswith(source_emu.bucket + "/")
+            else full_key
+        )
         if flavour == "s3":
-            import boto3
-            from botocore.client import Config
-
-            opts = source_emu.storage_options
-            client = boto3.client(
-                "s3",
-                endpoint_url=opts["client_kwargs"]["endpoint_url"],
-                aws_access_key_id=opts["key"],
-                aws_secret_access_key=opts["secret"],
-                region_name=opts["client_kwargs"].get("region_name", "us-east-1"),
-                config=Config(s3={"addressing_style": "path"}),
-            )
             client.copy_object(
                 Bucket=dest_emu.bucket,
                 Key=dest_key,
-                CopySource={"Bucket": source_emu.bucket, "Key": key},
+                CopySource={"Bucket": source_emu.bucket, "Key": src_key},
             )
             counter.bump("copy_object", 1)
         elif flavour == "gcs":
-            from google.cloud import storage as gcs_storage
-            import os
-
-            client = gcs_storage.Client(project=os.environ.get("GCS_PROJECT", "demo"))
-            src_blob = client.bucket(source_emu.bucket).blob(key)
+            src_blob = client.bucket(source_emu.bucket).blob(src_key)
             dst_bucket = client.bucket(dest_emu.bucket)
             dst_bucket.copy_blob(src_blob, dst_bucket, new_name=dest_key)
             counter.bump("copy_blob", 1)
         elif flavour == "azure":
-            from azure.storage.blob import BlobServiceClient
-
-            client = BlobServiceClient.from_connection_string(
-                source_emu.storage_options["connection_string"]
-            )
-            src = client.get_blob_client(source_emu.bucket, key)
+            src = client.get_blob_client(source_emu.bucket, src_key)
             dst = client.get_blob_client(dest_emu.bucket, dest_key)
             dst.start_copy_from_url(src.url)
             counter.bump("start_copy_from_url", 1)
