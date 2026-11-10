@@ -81,6 +81,8 @@ def main() -> int:
     p.add_argument("--skip-latency", action="store_true")
     p.add_argument("--quick", action="store_true",
                    help="size-mb=8, small-n=100, latency-n=50 -- fast local loop")
+    p.add_argument("--resume", action="store_true",
+                   help="reuse scenarios already saved in bench-out/<out-name>.partial.json")
     p.add_argument("--out-name", default=None,
                    help="snapshot basename in bench-out/ (default BENCH_SCALE, "
                         "or BENCH_SCALE_QUICK with --quick)")
@@ -121,49 +123,62 @@ def main() -> int:
         "scenarios": {},
     }
     t_start = time.perf_counter()
+    out_dir = ROOT / "bench-out"
+    out_dir.mkdir(exist_ok=True)
+    partial_path = out_dir / f"{out_name}.partial.json"
+    done: dict = {}
+    if args.resume and partial_path.exists():
+        done = json.loads(partial_path.read_text()).get("scenarios", {})
+        print(f"resuming; already done: {sorted(done)}", flush=True)
+
+    def run_scenario(name, fn):
+        if name in done:
+            results["scenarios"][name] = done[name]
+            return
+        results["scenarios"][name] = fn()
+        partial_path.write_text(json.dumps(results, indent=2, default=str) + "\n")
 
     if not args.skip_mixed:
         from generic_transfer.adapters.emulators import seed_mixed_tree
-        results["scenarios"]["mixed_tree"] = _bench_pairs(
+        run_scenario("mixed_tree", lambda: _bench_pairs(
             scenario="mixed", pairs=pairs, rounds=args.rounds,
             seed_fn=lambda emu, prefix: seed_mixed_tree(emu, prefix),
             workers_list=workers_list, chunk_size=args.chunk_size, latency_ms=0.0,
-        )
+        ))
     if not args.skip_small:
         from generic_transfer.adapters.emulators import seed_many_small
-        results["scenarios"]["small_objects"] = _bench_pairs(
+        run_scenario("small_objects", lambda: _bench_pairs(
             scenario="small", pairs=pairs, rounds=args.rounds,
             seed_fn=lambda emu, prefix: seed_many_small(
                 emu, prefix, n=args.small_n, size=args.small_bytes, marker_every=100),
             workers_list=workers_list, chunk_size=args.chunk_size, latency_ms=0.0,
-        )
+        ))
     if not args.skip_large:
-        results["scenarios"]["large_object"] = _bench_large(
+        run_scenario("large_object", lambda: _bench_large(
             pairs=pairs, rounds=args.rounds, size_mb=args.size_mb,
             workers_list=workers_list, chunk_size=args.chunk_size,
-        )
+        ))
     if not args.skip_server_side:
-        results["scenarios"]["server_side_same_provider"] = _bench_server_side(
+        run_scenario("server_side_same_provider", lambda: _bench_server_side(
             pairs=SAME_PROVIDER_PAIRS, rounds=args.rounds,
-        )
+        ))
     if not args.skip_latency and args.latency_ms > 0:
         from generic_transfer.adapters.emulators import seed_many_small
-        results["scenarios"]["wire_latency"] = _bench_pairs(
+        run_scenario("wire_latency", lambda: _bench_pairs(
             scenario="lat", pairs=lat_pairs, rounds=args.rounds,
             seed_fn=lambda emu, prefix: seed_many_small(
                 emu, prefix, n=args.latency_n, size=args.small_bytes, marker_every=50),
             workers_list=workers_list, chunk_size=args.chunk_size,
             latency_ms=args.latency_ms,
-        )
+        ))
 
     results["env"]["wall_clock_s"] = time.perf_counter() - t_start
-    out_dir = ROOT / "bench-out"
-    out_dir.mkdir(exist_ok=True)
     json_path = out_dir / f"{out_name}.json"
     md_path = out_dir / f"{out_name}.md"
     json_path.write_text(json.dumps(results, indent=2, default=str) + "\n")
     md_path.write_text(_render(results, quick=args.quick))
     print(md_path.read_text())
+    partial_path.unlink(missing_ok=True)
     print(f"\nWrote {json_path} and {md_path}")
     return 0
 
@@ -315,9 +330,10 @@ def _generic(src, dst, *, src_prefix, dest_prefix, mode, workers=1, chunk_size,
         "source_prefix": src_prefix,
         "dest_prefix": dest_prefix,
         "mode": mode,
-        "chunk_size": chunk_size,
         "listing": listing,
     }
+    if chunk_size:
+        params["chunk_size"] = chunk_size
     if mode == "parallel":
         params["workers"] = workers
     return GenericFileTransfer(

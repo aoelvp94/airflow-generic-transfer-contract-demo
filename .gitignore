@@ -36,3 +36,4 @@ bench-out/*
 !bench-out/PROFILE_LISTING_cprofile.txt
 !bench-out/CLIENT_COST.md
 !bench-out/CLIENT_COST.json
+bench-out/*.partial.json
