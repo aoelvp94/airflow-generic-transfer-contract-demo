@@ -1,124 +1,180 @@
-# Large-scale emulator bench
+# Scale bench (full run)
 
-- Captured (UTC): `2026-11-09T22:00:39.661416+00:00`
-- Platform: `Linux-6.12.94+-x86_64-with-glibc2.41` Python `3.12.15`
-- Rounds: **3** | large object: **8 MiB** | small N: **100** | workers: `4,8,16` | chunk_size: `1048576`
-- S3 backend: `s3mock`
+- Captured (UTC): `2026-11-10T07:30:59.132551+00:00`; wall clock 62.5 min
+- Host: `Intel(R) Xeon(R) Processor` x8, 15.6 GiB RAM, `Linux-6.12.113+-x86_64-with-glibc2.41`, Python `3.12.15`, Docker `29.1.4`
+- Emulators: `adobe/s3mock:3.12.0`, `fsouza/fake-gcs-server:1.56.1`, `mcr.microsoft.com/azure-storage/azurite:3.37.0`
+- Packages: fsspec `2026.9.0`, s3fs `2026.9.0`, gcsfs `2026.10.1`, adlfs `2026.8.0`, boto3 `1.43.117`, aiohttp `3.14.5`, urllib3 `2.8.0`, azure.storage.blob `12.31.1`, google.cloud.storage `3.17.1`
+- Rounds: **5** (round 0 = cold) | large object: **100 MiB** | small objects: **1000 x 4096 B** | workers: `4,8,16` | chunk_size: `1048576`
+- wire_latency: **20.0 ms** before every HTTP request, **200** objects
 
-> **Caveat:** Emulators on localhost do not represent real cloud latency or throughput. Median times here are mostly client/emulator overhead. Use latency_demo to see how request count dominates under RTT.
+> **Caveat:** Emulators on localhost do not represent real cloud latency or throughput. Times without injected latency are mostly client and emulator CPU. The wire_latency scenario adds a fixed delay before every HTTP request to model round-trip time.
 
-## Scenario: `mixed_tree`
+server_side_same_provider was re-run at `2026-11-10T08:44:30.314269+00:00` after a demo bug fix (shared listing + cached native client). The other four scenarios are from the original full run.
 
-| Pair | Mode | Cold (s) | Warm med (s) | Median (s) | Objects | Reqs | Peak MB (tracemalloc) |
-|---|---|---:|---:|---:|---:|---:|---:|
-| `s3->gcs` | naive_sequential | 0.6870 | 0.4921 | 0.5308 | 7 | 15 | 1.8 |
-| `s3->gcs` | generic_sequential | 0.3680 | 0.3703 | 0.3693 | 5 | 11 | 1.2 |
-| `s3->gcs` | generic_parallel_4 | 0.4102 | 0.3966 | 0.4102 | 5 | 11 | 1.3 |
-| `s3->gcs` | generic_parallel_8 | 0.3453 | 0.3541 | 0.3536 | 5 | 11 | 1.4 |
-| `s3->gcs` | generic_parallel_16 | 0.3453 | 0.3719 | 0.3574 | 5 | 11 | 1.3 |
-| `gcs->s3` | naive_sequential | 0.3125 | 0.3629 | 0.3448 | 7 | 15 | 1.1 |
-| `gcs->s3` | generic_sequential | 0.3639 | 0.2664 | 0.2712 | 5 | 11 | 1.0 |
-| `gcs->s3` | generic_parallel_4 | 0.2453 | 0.2558 | 0.2557 | 5 | 11 | 1.8 |
-| `gcs->s3` | generic_parallel_8 | 0.3368 | 0.2613 | 0.2665 | 5 | 11 | 2.0 |
-| `gcs->s3` | generic_parallel_16 | 0.2375 | 0.3160 | 0.2659 | 5 | 11 | 1.8 |
-| `s3->azure` | naive_sequential | 0.4855 | 0.5914 | 0.5891 | 7 | 15 | 1.6 |
-| `s3->azure` | generic_sequential | 0.3965 | 0.4803 | 0.4742 | 5 | 11 | 1.2 |
-| `s3->azure` | generic_parallel_4 | 0.3639 | 0.4532 | 0.4046 | 5 | 11 | 1.6 |
-| `s3->azure` | generic_parallel_8 | 0.4209 | 0.4250 | 0.4209 | 5 | 11 | 1.5 |
-| `s3->azure` | generic_parallel_16 | 0.3875 | 0.4264 | 0.4152 | 5 | 11 | 1.7 |
-| `azure->s3` | naive_sequential | 0.4803 | 0.4441 | 0.4549 | 7 | 15 | 1.2 |
-| `azure->s3` | generic_sequential | 0.4366 | 0.4265 | 0.4313 | 5 | 11 | 1.1 |
-| `azure->s3` | generic_parallel_4 | 0.4368 | 0.4890 | 0.4818 | 5 | 11 | 1.9 |
-| `azure->s3` | generic_parallel_8 | 0.4127 | 0.4355 | 0.4184 | 5 | 11 | 2.3 |
-| `azure->s3` | generic_parallel_16 | 0.4749 | 0.4308 | 0.4353 | 5 | 11 | 2.2 |
-| `gcs->azure` | naive_sequential | 0.1858 | 0.2627 | 0.2520 | 7 | 15 | 0.7 |
-| `gcs->azure` | generic_sequential | 0.1602 | 0.2185 | 0.2163 | 5 | 11 | 0.7 |
-| `gcs->azure` | generic_parallel_4 | 0.1503 | 0.2031 | 0.2003 | 5 | 11 | 0.7 |
-| `gcs->azure` | generic_parallel_8 | 0.1504 | 0.2129 | 0.2071 | 5 | 11 | 0.8 |
-| `gcs->azure` | generic_parallel_16 | 0.1450 | 0.2121 | 0.2079 | 5 | 11 | 0.8 |
-| `azure->gcs` | naive_sequential | 0.2266 | 0.2783 | 0.2671 | 7 | 15 | 0.6 |
-| `azure->gcs` | generic_sequential | 0.2935 | 0.3054 | 0.2944 | 5 | 11 | 0.7 |
-| `azure->gcs` | generic_parallel_4 | 0.2822 | 0.3062 | 0.2976 | 5 | 11 | 0.8 |
-| `azure->gcs` | generic_parallel_8 | 0.3051 | 0.3185 | 0.3140 | 5 | 11 | 0.9 |
-| `azure->gcs` | generic_parallel_16 | 0.3070 | 0.2837 | 0.2854 | 5 | 11 | 0.8 |
+Warm med = median of rounds 1..N-1 (with 3 rounds that is the mean of two samples, so one stall moves it; this run uses the rounds shown above). Max = slowest round. Columns: *HTTP reqs* = real requests counted at the transport (median over rounds); *Logical* = the copier's own list/get/put tally (last round). Peak MB = tracemalloc peak (Python allocations only, median over rounds).
 
-## Scenario: `small_1000`
+## `mixed_tree`: Mixed tree (markers, unicode, spaces, 0-byte real file)
 
-| Pair | Mode | Cold (s) | Warm med (s) | Median (s) | Objects | Reqs | Peak MB (tracemalloc) |
-|---|---|---:|---:|---:|---:|---:|---:|
-| `s3->gcs` | naive_sequential | 5.9944 | 6.3994 | 6.3042 | 102 | 205 | 5.6 |
-| `s3->gcs` | generic_sequential | 4.8228 | 4.8397 | 4.8228 | 100 | 201 | 5.2 |
-| `s3->gcs` | generic_parallel_4 | 4.5301 | 4.4467 | 4.4522 | 100 | 201 | 5.3 |
-| `s3->gcs` | generic_parallel_8 | 5.0346 | 4.8515 | 4.8969 | 100 | 201 | 5.2 |
-| `s3->gcs` | generic_parallel_16 | 4.7482 | 4.6285 | 4.7482 | 100 | 201 | 6.3 |
-| `gcs->s3` | naive_sequential | 4.0517 | 4.3825 | 4.2942 | 102 | 205 | 5.2 |
-| `gcs->s3` | generic_sequential | 4.4061 | 4.2590 | 4.2882 | 100 | 201 | 5.4 |
-| `gcs->s3` | generic_parallel_4 | 3.9546 | 3.9765 | 3.9546 | 100 | 201 | 7.6 |
-| `gcs->s3` | generic_parallel_8 | 4.1155 | 4.1706 | 4.1538 | 100 | 201 | 9.4 |
-| `gcs->s3` | generic_parallel_16 | 4.1796 | 4.7441 | 4.4227 | 100 | 201 | 11.3 |
-| `s3->azure` | naive_sequential | 5.9338 | 6.5533 | 6.5069 | 102 | 205 | 7.2 |
-| `s3->azure` | generic_sequential | 5.1219 | 5.8628 | 5.7781 | 100 | 201 | 7.7 |
-| `s3->azure` | generic_parallel_4 | 4.4849 | 4.8804 | 4.7794 | 100 | 201 | 7.9 |
-| `s3->azure` | generic_parallel_8 | 4.5013 | 5.0149 | 5.0051 | 100 | 201 | 6.4 |
-| `s3->azure` | generic_parallel_16 | 4.4235 | 4.8152 | 4.8026 | 100 | 201 | 8.0 |
-| `azure->s3` | naive_sequential | 4.2139 | 4.9596 | 4.7477 | 102 | 205 | 7.3 |
-| `azure->s3` | generic_sequential | 5.9182 | 5.8574 | 5.9002 | 100 | 201 | 7.3 |
-| `azure->s3` | generic_parallel_4 | 5.2970 | 5.9377 | 5.6887 | 100 | 201 | 8.5 |
-| `azure->s3` | generic_parallel_8 | 6.2055 | 5.7342 | 5.7624 | 100 | 201 | 10.2 |
-| `azure->s3` | generic_parallel_16 | 5.3771 | 5.4763 | 5.3771 | 100 | 201 | 12.7 |
-| `gcs->azure` | naive_sequential | 2.2485 | 2.6322 | 2.6025 | 102 | 205 | 5.8 |
-| `gcs->azure` | generic_sequential | 2.1324 | 2.5689 | 2.5626 | 100 | 201 | 5.7 |
-| `gcs->azure` | generic_parallel_4 | 2.0261 | 2.3814 | 2.3348 | 100 | 201 | 5.8 |
-| `gcs->azure` | generic_parallel_8 | 2.0768 | 2.3266 | 2.2706 | 100 | 201 | 6.2 |
-| `gcs->azure` | generic_parallel_16 | 1.8330 | 2.4296 | 2.4237 | 100 | 201 | 5.7 |
-| `azure->gcs` | naive_sequential | 2.5004 | 3.2627 | 2.8341 | 102 | 205 | 5.6 |
-| `azure->gcs` | generic_sequential | 3.9264 | 4.0710 | 4.0607 | 100 | 201 | 5.6 |
-| `azure->gcs` | generic_parallel_4 | 3.4636 | 3.8820 | 3.8291 | 100 | 201 | 5.6 |
-| `azure->gcs` | generic_parallel_8 | 3.8184 | 4.0263 | 3.9794 | 100 | 201 | 5.7 |
-| `azure->gcs` | generic_parallel_16 | 3.8952 | 3.8754 | 3.8952 | 100 | 201 | 5.8 |
+| Pair | Mode | Cold (s) | Warm med (s) | Max (s) | Objects | HTTP reqs | Logical | Peak MB |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| `s3->gcs` | naive_sequential | 0.106 | 0.079 | 0.106 | 7 | 15 | 15 | 0.4 |
+| `s3->gcs` | generic_sequential_per_key | 0.156 | 0.123 | 0.156 | 5 | 26 | 11 | 0.4 |
+| `s3->gcs` | generic_sequential | 0.041 | 0.041 | 0.041 | 5 | 10 | 11 | 0.3 |
+| `s3->gcs` | generic_parallel_4 | 0.036 | 0.033 | 0.036 | 5 | 10 | 11 | 0.4 |
+| `s3->gcs` | generic_parallel_8 | 0.033 | 0.034 | 0.036 | 5 | 10 | 11 | 0.4 |
+| `s3->gcs` | generic_parallel_16 | 0.032 | 0.033 | 0.035 | 5 | 10 | 11 | 0.4 |
+| `gcs->s3` | naive_sequential | 0.072 | 0.061 | 0.072 | 7 | 16 | 15 | 0.1 |
+| `gcs->s3` | generic_sequential_per_key | 0.066 | 0.066 | 0.073 | 5 | 37 | 11 | 0.3 |
+| `gcs->s3` | generic_sequential | 0.033 | 0.033 | 0.034 | 5 | 10 | 11 | 0.3 |
+| `gcs->s3` | generic_parallel_4 | 0.026 | 0.023 | 0.026 | 5 | 10 | 11 | 0.4 |
+| `gcs->s3` | generic_parallel_8 | 0.024 | 0.025 | 0.046 | 5 | 10 | 11 | 0.4 |
+| `gcs->s3` | generic_parallel_16 | 0.025 | 0.024 | 0.025 | 5 | 10 | 11 | 0.3 |
+| `s3->azure` | naive_sequential | 0.117 | 0.095 | 0.117 | 7 | 15 | 15 | 0.4 |
+| `s3->azure` | generic_sequential_per_key | 0.140 | 0.135 | 0.144 | 5 | 26 | 11 | 0.4 |
+| `s3->azure` | generic_sequential | 0.060 | 0.060 | 0.082 | 5 | 10 | 11 | 0.3 |
+| `s3->azure` | generic_parallel_4 | 0.047 | 0.046 | 0.048 | 5 | 10 | 11 | 0.5 |
+| `s3->azure` | generic_parallel_8 | 0.044 | 0.045 | 0.049 | 5 | 10 | 11 | 0.5 |
+| `s3->azure` | generic_parallel_16 | 0.049 | 0.044 | 0.051 | 5 | 10 | 11 | 0.5 |
+| `azure->s3` | naive_sequential | 0.098 | 0.097 | 0.103 | 7 | 18 | 15 | 0.3 |
+| `azure->s3` | generic_sequential_per_key | 0.132 | 0.129 | 0.132 | 5 | 24 | 11 | 0.5 |
+| `azure->s3` | generic_sequential | 0.062 | 0.063 | 0.064 | 5 | 11 | 11 | 0.5 |
+| `azure->s3` | generic_parallel_4 | 0.049 | 0.049 | 0.057 | 5 | 11 | 11 | 0.5 |
+| `azure->s3` | generic_parallel_8 | 0.051 | 0.049 | 0.052 | 5 | 11 | 11 | 0.5 |
+| `azure->s3` | generic_parallel_16 | 0.050 | 0.051 | 0.052 | 5 | 11 | 11 | 0.5 |
+| `gcs->azure` | naive_sequential | 0.064 | 0.069 | 0.101 | 7 | 16 | 15 | 0.2 |
+| `gcs->azure` | generic_sequential_per_key | 0.066 | 0.067 | 0.072 | 5 | 36 | 11 | 0.4 |
+| `gcs->azure` | generic_sequential | 0.037 | 0.038 | 0.045 | 5 | 10 | 11 | 0.3 |
+| `gcs->azure` | generic_parallel_4 | 0.031 | 0.029 | 0.031 | 5 | 10 | 11 | 0.4 |
+| `gcs->azure` | generic_parallel_8 | 0.028 | 0.029 | 0.032 | 5 | 10 | 11 | 0.5 |
+| `gcs->azure` | generic_parallel_16 | 0.036 | 0.029 | 0.036 | 5 | 10 | 11 | 0.5 |
+| `azure->gcs` | naive_sequential | 0.093 | 0.076 | 0.093 | 7 | 18 | 15 | 0.3 |
+| `azure->gcs` | generic_sequential_per_key | 0.120 | 0.114 | 0.120 | 5 | 24 | 11 | 0.5 |
+| `azure->gcs` | generic_sequential | 0.048 | 0.049 | 0.051 | 5 | 11 | 11 | 0.5 |
+| `azure->gcs` | generic_parallel_4 | 0.043 | 0.044 | 0.051 | 5 | 11 | 11 | 0.5 |
+| `azure->gcs` | generic_parallel_8 | 0.046 | 0.043 | 0.049 | 5 | 11 | 11 | 0.6 |
+| `azure->gcs` | generic_parallel_16 | 0.046 | 0.042 | 0.046 | 5 | 11 | 11 | 0.6 |
 
-## Scenario: `large_object`
+## `small_objects`: Many small objects
 
-| Pair | Mode | Cold (s) | Warm med (s) | Median (s) | Objects | Reqs | Peak MB (tracemalloc) |
-|---|---|---:|---:|---:|---:|---:|---:|
-| `s3->gcs` | generic_sequential | 0.3453 | 0.2988 | 0.3037 | 1 | 3 | 32.5 |
-| `s3->gcs` | generic_parallel_4 | 0.2638 | 0.3034 | 0.3020 | 1 | 3 | 32.5 |
-| `gcs->s3` | generic_sequential | 0.3130 | 0.2724 | 0.2759 | 1 | 3 | 32.7 |
-| `gcs->s3` | generic_parallel_4 | 0.2741 | 0.3007 | 0.2931 | 1 | 3 | 32.7 |
-| `s3->azure` | generic_sequential | 0.3028 | 0.3198 | 0.3122 | 1 | 3 | 24.8 |
-| `s3->azure` | generic_parallel_4 | 0.2477 | 0.2926 | 0.2879 | 1 | 3 | 24.8 |
-| `azure->s3` | generic_sequential | 0.2915 | 9.3712 | 0.3533 | 1 | 3 | 24.7 |
-| `azure->s3` | generic_parallel_4 | 0.3234 | 0.3357 | 0.3321 | 1 | 3 | 24.7 |
-| `gcs->azure` | generic_sequential | 0.1995 | 0.2283 | 0.2279 | 1 | 3 | 32.7 |
-| `gcs->azure` | generic_parallel_4 | 0.1751 | 0.2298 | 0.2255 | 1 | 3 | 32.7 |
-| `azure->gcs` | generic_sequential | 0.2394 | 0.2722 | 0.2643 | 1 | 3 | 32.3 |
-| `azure->gcs` | generic_parallel_4 | 0.2390 | 0.2579 | 0.2457 | 1 | 3 | 32.2 |
+| Pair | Mode | Cold (s) | Warm med (s) | Max (s) | Objects | HTTP reqs | Logical | Peak MB |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| `s3->gcs` | naive_sequential | 8.361 | 8.374 | 8.638 | 1011 | 2024 | 2023 | 2.6 |
+| `s3->gcs` | generic_sequential_per_key | 20.863 | 18.888 | 20.863 | 1000 | 4024 | 2001 | 2.3 |
+| `s3->gcs` | generic_sequential | 8.772 | 8.757 | 8.923 | 1000 | 2002 | 2001 | 2.3 |
+| `s3->gcs` | generic_parallel_4 | 6.335 | 6.307 | 6.463 | 1000 | 2002 | 2001 | 2.9 |
+| `s3->gcs` | generic_parallel_8 | 6.478 | 6.147 | 6.478 | 1000 | 2002 | 2001 | 3.2 |
+| `s3->gcs` | generic_parallel_16 | 6.381 | 6.322 | 6.414 | 1000 | 2002 | 2001 | 3.4 |
+| `gcs->s3` | naive_sequential | 8.486 | 8.705 | 8.952 | 1011 | 2024 | 2023 | 4.2 |
+| `gcs->s3` | generic_sequential_per_key | 11.899 | 12.050 | 12.593 | 1000 | 6050 | 2001 | 4.1 |
+| `gcs->s3` | generic_sequential | 7.255 | 7.354 | 7.637 | 1000 | 2002 | 2001 | 4.1 |
+| `gcs->s3` | generic_parallel_4 | 5.027 | 4.930 | 5.049 | 1000 | 2002 | 2001 | 4.1 |
+| `gcs->s3` | generic_parallel_8 | 4.568 | 6.450 | 14.510 | 1000 | 2002 | 2001 | 4.1 |
+| `gcs->s3` | generic_parallel_16 | 7.277 | 5.133 | 7.277 | 1000 | 2002 | 2001 | 4.1 |
+| `s3->azure` | naive_sequential | 13.693 | 13.200 | 14.220 | 1011 | 2024 | 2023 | 2.6 |
+| `s3->azure` | generic_sequential_per_key | 22.889 | 22.321 | 22.889 | 1000 | 4024 | 2001 | 2.3 |
+| `s3->azure` | generic_sequential | 12.408 | 13.530 | 14.164 | 1000 | 2002 | 2001 | 2.3 |
+| `s3->azure` | generic_parallel_4 | 9.321 | 8.796 | 9.348 | 1000 | 2002 | 2001 | 3.6 |
+| `s3->azure` | generic_parallel_8 | 8.487 | 8.289 | 9.001 | 1000 | 2002 | 2001 | 3.9 |
+| `s3->azure` | generic_parallel_16 | 8.412 | 8.236 | 8.412 | 1000 | 2002 | 2001 | 4.4 |
+| `azure->s3` | naive_sequential | 12.355 | 13.119 | 13.470 | 1011 | 2034 | 2023 | 8.6 |
+| `azure->s3` | generic_sequential_per_key | 24.530 | 23.449 | 24.530 | 1000 | 4022 | 2001 | 7.9 |
+| `azure->s3` | generic_sequential | 12.646 | 12.314 | 12.668 | 1000 | 2002 | 2001 | 7.9 |
+| `azure->s3` | generic_parallel_4 | 8.751 | 9.461 | 10.150 | 1000 | 2002 | 2001 | 7.9 |
+| `azure->s3` | generic_parallel_8 | 8.850 | 9.222 | 10.394 | 1000 | 2002 | 2001 | 8.2 |
+| `azure->s3` | generic_parallel_16 | 9.125 | 8.586 | 9.125 | 1000 | 2002 | 2001 | 8.7 |
+| `gcs->azure` | naive_sequential | 9.963 | 10.149 | 10.339 | 1011 | 2024 | 2023 | 4.2 |
+| `gcs->azure` | generic_sequential_per_key | 13.417 | 14.428 | 15.232 | 1000 | 6055 | 2001 | 4.2 |
+| `gcs->azure` | generic_sequential | 9.302 | 8.930 | 9.302 | 1000 | 2002 | 2001 | 4.2 |
+| `gcs->azure` | generic_parallel_4 | 6.094 | 5.604 | 6.094 | 1000 | 2002 | 2001 | 4.2 |
+| `gcs->azure` | generic_parallel_8 | 5.593 | 5.840 | 5.882 | 1000 | 2002 | 2001 | 4.2 |
+| `gcs->azure` | generic_parallel_16 | 5.774 | 5.759 | 6.038 | 1000 | 2002 | 2001 | 4.6 |
+| `azure->gcs` | naive_sequential | 10.220 | 10.252 | 11.280 | 1011 | 2034 | 2023 | 8.6 |
+| `azure->gcs` | generic_sequential_per_key | 21.720 | 21.287 | 21.720 | 1000 | 4022 | 2001 | 7.9 |
+| `azure->gcs` | generic_sequential | 9.940 | 10.581 | 10.769 | 1000 | 2002 | 2001 | 7.9 |
+| `azure->gcs` | generic_parallel_4 | 8.314 | 8.502 | 9.007 | 1000 | 2002 | 2001 | 8.1 |
+| `azure->gcs` | generic_parallel_8 | 8.304 | 7.670 | 8.304 | 1000 | 2002 | 2001 | 8.6 |
+| `azure->gcs` | generic_parallel_16 | 7.410 | 7.464 | 7.525 | 1000 | 2002 | 2001 | 9.2 |
 
-## Scenario: `server_side_same_provider`
+## `large_object`: One large object
 
-| Pair | Mode | Cold (s) | Warm med (s) | Median (s) | Objects | Reqs | Peak MB (tracemalloc) |
-|---|---|---:|---:|---:|---:|---:|---:|
-| `s3->s3` | server_side | 0.3887 | 0.2946 | 0.2970 | 2 | 3 | 1.4 |
-| `s3->s3` | read_write | 0.2848 | 0.3073 | 0.3015 | 2 | 5 | 1.3 |
-| `gcs->gcs` | server_side | 0.0831 | 0.0904 | 0.0885 | 2 | 3 | 0.4 |
-| `gcs->gcs` | read_write | 0.0873 | 0.0969 | 0.0894 | 2 | 5 | 0.4 |
-| `azure->azure` | server_side | 0.1660 | 0.2574 | 0.2487 | 2 | 3 | 0.7 |
-| `azure->azure` | read_write | 0.2073 | 0.2619 | 0.2557 | 2 | 5 | 0.7 |
+| Pair | Mode | Cold (s) | Warm med (s) | Max (s) | Objects | HTTP reqs | Logical | Peak MB |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| `s3->gcs` | naive_sequential | 1.187 | 0.769 | 1.187 | 1 | 4 | 3 | 136.2 |
+| `s3->gcs` | generic_sequential | 1.000 | 0.840 | 1.001 | 1 | 6 | 3 | 255.9 |
+| `s3->gcs` | generic_parallel_4 | 0.728 | 0.782 | 1.073 | 1 | 6 | 3 | 255.9 |
+| `gcs->s3` | naive_sequential | 0.962 | 1.073 | 1.120 | 1 | 4 | 3 | 108.8 |
+| `gcs->s3` | generic_sequential | 1.037 | 0.979 | 1.037 | 1 | 33 | 3 | 211.9 |
+| `gcs->s3` | generic_parallel_4 | 0.983 | 0.954 | 0.986 | 1 | 32 | 3 | 211.9 |
+| `s3->azure` | naive_sequential | 2.067 | 2.136 | 2.262 | 1 | 28 | 3 | 136.2 |
+| `s3->azure` | generic_sequential | 2.473 | 2.070 | 2.473 | 1 | 30 | 3 | 255.9 |
+| `s3->azure` | generic_parallel_4 | 2.192 | 2.139 | 2.192 | 1 | 30 | 3 | 255.9 |
+| `azure->s3` | naive_sequential | 1.558 | 2.198 | 40.479 | 1 | 20 | 3 | 288.4 |
+| `azure->s3` | generic_sequential | 1.352 | 1.458 | 1.708 | 1 | 16 | 3 | 256.0 |
+| `azure->s3` | generic_parallel_4 | 1.067 | 1.267 | 1.356 | 1 | 16 | 3 | 256.0 |
+| `gcs->azure` | naive_sequential | 2.815 | 2.281 | 2.815 | 1 | 29 | 3 | 108.8 |
+| `gcs->azure` | generic_sequential | 2.262 | 2.290 | 2.441 | 1 | 58 | 3 | 211.9 |
+| `gcs->azure` | generic_parallel_4 | 2.398 | 2.326 | 2.398 | 1 | 57 | 3 | 211.9 |
+| `azure->gcs` | naive_sequential | 2.165 | 1.430 | 2.165 | 1 | 21 | 3 | 288.4 |
+| `azure->gcs` | generic_sequential | 0.900 | 0.979 | 1.028 | 1 | 17 | 3 | 256.0 |
+| `azure->gcs` | generic_parallel_4 | 1.202 | 1.054 | 1.212 | 1 | 17 | 3 | 256.0 |
 
-## Scenario: `latency_demo`
+## `server_side_same_provider`: Same-provider server-side copy vs read/write
 
-Injected latency: **25.0 ms/request** on `s3->gcs`.
+Before the fix this path listed every native key and called `is_folder_marker` (an `info()` / HEAD, plus a child `find` for each zero-byte marker) **and** built a new boto3 / GCS / Azure client per object. The two skipped keys were the folder markers, reported because they were inspected one-by-one instead of being filtered by `list_transfer_entries`. That made server-side slower than read/write and inflated HTTP counts (9–14 vs 5–6). After the fix, server-side copies the same two files, `skipped` is empty, and it is faster than read/write with 3 HTTP requests (4 on Azure).
 
-Naive copies 4 objects (9 req); generic copies 2 (5 req). With injected per-request latency, wall time tracks request_total.
+| Pair | Mode | Cold (s) | Warm med (s) | Max (s) | Objects | HTTP reqs | Logical | Peak MB |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| `s3->s3` | server_side | 0.019 | 0.014 | 0.019 | 2 | 3 | 3 | 0.3 |
+| `s3->s3` | read_write | 0.026 | 0.023 | 0.033 | 2 | 5 | 5 | 0.3 |
+| `gcs->gcs` | server_side | 0.008 | 0.006 | 0.008 | 2 | 3 | 3 | 0.3 |
+| `gcs->gcs` | read_write | 0.010 | 0.009 | 0.011 | 2 | 5 | 5 | 0.3 |
+| `azure->azure` | server_side | 0.023 | 0.023 | 0.023 | 2 | 4 | 3 | 0.4 |
+| `azure->azure` | read_write | 0.037 | 0.036 | 0.037 | 2 | 6 | 5 | 0.4 |
 
-| Path | Median (s) | Requests (last) | Objects | Injected latency (s) |
-|---|---:|---:|---:|---:|
-| naive | 0.546 | 9 | 4 | 0.225 |
-| generic | 0.337 | 5 | 2 | 0.125 |
+## `wire_latency`: Small objects with injected per-request latency
+
+| Pair | Mode | Cold (s) | Warm med (s) | Max (s) | Objects | HTTP reqs | Logical | Peak MB |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| `s3->gcs` | naive_sequential | 9.970 | 9.968 | 10.008 | 205 | 411 | 411 | 0.8 |
+| `s3->gcs` | generic_sequential_per_key | 20.121 | 20.338 | 20.791 | 200 | 811 | 401 | 0.7 |
+| `s3->gcs` | generic_sequential | 9.840 | 9.927 | 10.261 | 200 | 401 | 401 | 0.7 |
+| `s3->gcs` | generic_parallel_4 | 2.558 | 2.560 | 2.645 | 200 | 401 | 401 | 1.2 |
+| `s3->gcs` | generic_parallel_8 | 1.430 | 1.468 | 1.546 | 200 | 401 | 401 | 1.3 |
+| `s3->gcs` | generic_parallel_16 | 1.442 | 1.431 | 1.606 | 200 | 401 | 401 | 1.6 |
+| `gcs->s3` | naive_sequential | 10.251 | 10.380 | 10.536 | 205 | 412 | 411 | 0.9 |
+| `gcs->s3` | generic_sequential_per_key | 19.595 | 19.229 | 19.651 | 200 | 1307 | 401 | 0.8 |
+| `gcs->s3` | generic_sequential | 9.881 | 9.785 | 10.177 | 200 | 401 | 401 | 0.8 |
+| `gcs->s3` | generic_parallel_4 | 2.490 | 2.630 | 2.787 | 200 | 401 | 401 | 1.0 |
+| `gcs->s3` | generic_parallel_8 | 1.440 | 1.440 | 1.519 | 200 | 401 | 401 | 1.1 |
+| `gcs->s3` | generic_parallel_16 | 1.043 | 1.098 | 1.136 | 200 | 401 | 401 | 1.3 |
+| `s3->azure` | naive_sequential | 11.549 | 11.237 | 11.549 | 205 | 411 | 411 | 0.8 |
+| `s3->azure` | generic_sequential_per_key | 21.931 | 22.447 | 22.771 | 200 | 811 | 401 | 0.9 |
+| `s3->azure` | generic_sequential | 11.357 | 11.535 | 11.845 | 200 | 401 | 401 | 0.9 |
+| `s3->azure` | generic_parallel_4 | 2.854 | 2.923 | 3.263 | 200 | 401 | 401 | 1.5 |
+| `s3->azure` | generic_parallel_8 | 2.017 | 1.824 | 2.017 | 200 | 401 | 401 | 2.1 |
+| `s3->azure` | generic_parallel_16 | 1.717 | 1.659 | 1.782 | 200 | 401 | 401 | 2.6 |
+| `azure->s3` | naive_sequential | 10.989 | 11.104 | 11.506 | 205 | 416 | 411 | 1.7 |
+| `azure->s3` | generic_sequential_per_key | 21.856 | 22.778 | 24.052 | 200 | 810 | 401 | 1.7 |
+| `azure->s3` | generic_sequential | 11.447 | 11.067 | 11.447 | 200 | 402 | 401 | 1.7 |
+| `azure->s3` | generic_parallel_4 | 2.977 | 3.026 | 3.167 | 200 | 402 | 401 | 2.3 |
+| `azure->s3` | generic_parallel_8 | 1.936 | 1.947 | 2.140 | 200 | 402 | 401 | 2.6 |
+| `azure->s3` | generic_parallel_16 | 1.798 | 1.733 | 1.798 | 200 | 402 | 401 | 2.1 |
+| `gcs->azure` | naive_sequential | 10.548 | 11.093 | 11.404 | 205 | 412 | 411 | 0.9 |
+| `gcs->azure` | generic_sequential_per_key | 19.917 | 19.950 | 20.234 | 200 | 1349 | 401 | 0.9 |
+| `gcs->azure` | generic_sequential | 10.135 | 10.596 | 11.313 | 200 | 401 | 401 | 0.9 |
+| `gcs->azure` | generic_parallel_4 | 2.729 | 2.731 | 3.104 | 200 | 401 | 401 | 1.6 |
+| `gcs->azure` | generic_parallel_8 | 1.651 | 1.565 | 1.651 | 200 | 401 | 401 | 2.2 |
+| `gcs->azure` | generic_parallel_16 | 1.588 | 1.246 | 1.588 | 200 | 401 | 401 | 2.8 |
+| `azure->gcs` | naive_sequential | 10.864 | 10.976 | 11.049 | 205 | 416 | 411 | 1.7 |
+| `azure->gcs` | generic_sequential_per_key | 21.074 | 20.999 | 21.324 | 200 | 810 | 401 | 1.7 |
+| `azure->gcs` | generic_sequential | 10.182 | 10.280 | 10.325 | 200 | 402 | 401 | 1.7 |
+| `azure->gcs` | generic_parallel_4 | 2.732 | 2.767 | 2.873 | 200 | 402 | 401 | 1.7 |
+| `azure->gcs` | generic_parallel_8 | 1.671 | 1.687 | 1.797 | 200 | 402 | 401 | 2.5 |
+| `azure->gcs` | generic_parallel_16 | 1.569 | 1.563 | 1.612 | 200 | 402 | 401 | 2.6 |
 
 ## Reproduce
 
 ```bash
-just up && just bench-scale          # full (100 MiB + 1000 objs)
-just up && just bench-scale-quick    # 8 MiB + 100 objs
+just up && just bench-scale          # full run -> bench-out/BENCH_SCALE.*
+just up && just bench-scale-quick    # quick run -> bench-out/BENCH_SCALE_QUICK.*
 ```
