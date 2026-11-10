@@ -30,7 +30,7 @@ bench-emulators:
 	.venv/bin/python scripts/bench_emulators.py --rounds 5
 
 bench-scale:
-	.venv/bin/python scripts/bench_scale.py --rounds 3
+	.venv/bin/python scripts/bench_scale.py --rounds 5
 
 bench-scale-quick:
 	.venv/bin/python scripts/bench_scale.py --quick --rounds 3
@@ -39,7 +39,7 @@ bench-scale-quick:
 bench-scale-fresh:
 	./scripts/emulators.sh down
 	./scripts/emulators.sh up
-	.venv/bin/python scripts/bench_scale.py --rounds 3
+	.venv/bin/python scripts/bench_scale.py --rounds 5
 
 profile-listing:
 	.venv/bin/python scripts/profile_listing.py --n 1000 --rounds 3 --cprofile

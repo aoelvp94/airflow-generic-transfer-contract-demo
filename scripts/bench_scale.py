@@ -471,6 +471,8 @@ def _render(results: dict, *, quick: bool) -> str:
         "",
         f"> **Caveat:** {results['caveat']}",
         "",
+        "Warm med = median of rounds 1..N-1 (with 3 rounds that is the mean of two samples, "
+        "so one stall moves it; this run uses the rounds shown above). Max = slowest round. "
         "Columns: *HTTP reqs* = real requests counted at the transport (median over rounds); "
         "*Logical* = the copier's own list/get/put tally (last round). Peak MB = tracemalloc "
         "peak (Python allocations only, median over rounds).",
@@ -479,7 +481,7 @@ def _render(results: dict, *, quick: bool) -> str:
     for name, payload in results["scenarios"].items():
         lines += [f"## `{name}`: {SCENARIO_TITLES.get(name, name)}", ""]
         lines += [
-            "| Pair | Mode | Cold (s) | Warm med (s) | Median (s) | Objects | HTTP reqs | Logical | Peak MB |",
+            "| Pair | Mode | Cold (s) | Warm med (s) | Max (s) | Objects | HTTP reqs | Logical | Peak MB |",
             "|---|---|---:|---:|---:|---:|---:|---:|---:|",
         ]
         for row in payload:
@@ -487,7 +489,7 @@ def _render(results: dict, *, quick: bool) -> str:
                 last = stats["last"]
                 lines.append(
                     f"| `{row['pair']}` | {mode} | {stats['cold_s']:.3f} | "
-                    f"{stats['warm_median_s']:.3f} | {stats['median_s']:.3f} | "
+                    f"{stats['warm_median_s']:.3f} | {max(stats['samples_s']):.3f} | "
                     f"{last.get('count', last.get('error', '?'))} | "
                     f"{stats['http_total_median']:.0f} | "
                     f"{last.get('request_total', '?')} | "
