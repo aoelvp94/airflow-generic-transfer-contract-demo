@@ -37,3 +37,5 @@ bench-out/*
 !bench-out/CLIENT_COST.md
 !bench-out/CLIENT_COST.json
 bench-out/*.partial.json
+!bench-out/PAIR_AUDIT.csv
+!bench-out/PAIR_AUDIT.json

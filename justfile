@@ -54,6 +54,11 @@ probe-emulators:
 bench-adbc:
     .venv/bin/python scripts/bench_adbc.py --rows 1000000 --rounds 3
 
+# Pair-mapping audit of apache/airflow transfer operators (no emulators).
+# Requires a clone at $AIRFLOW_SRC or /workspace/airflow-src (providers/ is enough).
+audit:
+    .venv/bin/python scripts/audit_transfers.py
+
 # Full evidence loop for the dev-list thread.
 e2e: up test-all bench bench-emulators bench-scale-quick bench-adbc
 
