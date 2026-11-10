@@ -41,3 +41,9 @@ bench-out/*.partial.json
 !bench-out/PAIR_AUDIT.json
 !bench-out/CAPABILITY_RANK.md
 !bench-out/CAPABILITY_RANK.json
+
+# GCS/S3/Azure shim experiment artifacts (do not commit venvs or emulator state)
+experiments/*/.venv/
+experiments/*/.airflow-home/
+experiments/*/pytest-junit.xml
+experiments/*/.pytest_cache/

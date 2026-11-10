@@ -1,5 +1,5 @@
 # Mirror of justfile targets for reviewers without `just`.
-.PHONY: audit rank-capabilities install up down status test test-integration test-all bench bench-emulators bench-scale bench-scale-quick bench-scale-fresh profile-listing probe-emulators bench-adbc e2e check reproduce
+.PHONY: audit rank-capabilities experiment-gcs-to-gcs install up down status test test-integration test-all bench bench-emulators bench-scale bench-scale-quick bench-scale-fresh profile-listing probe-emulators bench-adbc e2e check reproduce
 
 install:
 	uv venv .venv
@@ -61,6 +61,13 @@ audit:
 
 rank-capabilities:
 	.venv/bin/python scripts/rank_capabilities.py
+
+# Run unmodified upstream GCSToGCSOperator unit tests against the file-contract shim.
+# Uses a dedicated venv under experiments/gcs_to_gcs_shim/.venv (not the demo venv).
+# Does not start emulators. Times out after 3 minutes.
+experiment-gcs-to-gcs:
+	@if [ ! -x experiments/gcs_to_gcs_shim/.venv/bin/python ]; then echo "experiment venv missing; see just experiment-gcs-to-gcs"; exit 1; fi
+	timeout 180 env AIRFLOW_SRC="$${AIRFLOW_SRC:-/workspace/airflow-src}" experiments/gcs_to_gcs_shim/.venv/bin/python experiments/gcs_to_gcs_shim/run_upstream.py
 
 e2e: up test-all bench bench-emulators bench-scale-quick bench-adbc
 
