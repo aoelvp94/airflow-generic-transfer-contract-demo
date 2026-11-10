@@ -179,3 +179,64 @@ experiment-azure-parity:
     if [ "$STARTED_S3" = "1" ]; then docker compose -f docker-compose.yml stop s3; fi
     if [ "$STARTED_AZ" = "1" ]; then docker compose -f docker-compose.yml stop azure; fi
     exit $RC
+
+
+# One generic file-transfer operator on all 9 {S3,GCS,Azure}x{S3,GCS,Azure} pairs.
+# Starts s3+gcs+azure only if they are down; stops only what this recipe started.
+# Leaves nothing running. Wrapper unit tests do not need emulators and run second.
+experiment-all-pairs:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ -z "${DOCKER_HOST:-}" && ! -S /var/run/docker.sock ]]; then
+        if curl -sf --connect-timeout 1 http://127.0.0.1:2375/version >/dev/null 2>&1; then
+            export DOCKER_HOST=tcp://127.0.0.1:2375
+        fi
+    fi
+    VENV="experiments/gcs_to_gcs_shim/.venv/bin/python"
+    AIRFLOW_SRC="${AIRFLOW_SRC:-/workspace/airflow-src}"
+    started=()
+    ready() {
+        local url="$1"
+        local code
+        code=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 1 "$url" || true)
+        [[ "$code" =~ ^[12345][0-9][0-9]$ ]]
+    }
+    wait_ready() {
+        local url="$1" name="$2"
+        local i
+        for i in $(seq 1 60); do
+            if ready "$url"; then
+                echo "ok $name"
+                return 0
+            fi
+            sleep 0.5
+        done
+        echo "FAIL $name not ready: $url" >&2
+        return 1
+    }
+    if ! ready http://127.0.0.1:19090/; then
+        docker compose -f docker-compose.yml up -d s3
+        started+=(s3)
+        wait_ready http://127.0.0.1:19090/ s3
+    fi
+    if ! ready http://127.0.0.1:14443/storage/v1/b; then
+        docker compose -f docker-compose.yml up -d gcs
+        started+=(gcs)
+        wait_ready http://127.0.0.1:14443/storage/v1/b gcs
+    fi
+    if ! ready http://127.0.0.1:10000/; then
+        docker compose -f docker-compose.yml up -d azure
+        started+=(azure)
+        wait_ready http://127.0.0.1:10000/ azure
+    fi
+    set +e
+    timeout 600 env AIRFLOW_SRC="$AIRFLOW_SRC" "$VENV" experiments/generic_all_pairs/parity.py
+    PARITY_RC=$?
+    timeout 600 env AIRFLOW_SRC="$AIRFLOW_SRC" "$VENV" experiments/generic_all_pairs/run_wrappers.py
+    WRAP_RC=$?
+    set -e
+    if ((${#started[@]})); then
+        docker compose -f docker-compose.yml stop "${started[@]}"
+    fi
+    if [ "$PARITY_RC" -ne 0 ]; then exit "$PARITY_RC"; fi
+    exit "$WRAP_RC"
