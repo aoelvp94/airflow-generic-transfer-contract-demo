@@ -13,7 +13,7 @@ Reproduce:
 ```bash
 # Shallow sparse clone of apache/airflow (providers/ only), then:
 just audit
-# or: .venv/bin/python scripts/audit_transfers.py --airflow-src /workspace/airflow-src
+# or: .venv/bin/python audits/audit_transfers.py --airflow-src /workspace/airflow-src
 ```
 
 ## Corpus
@@ -169,7 +169,7 @@ Unresolved bases (not merged):
 
 ## Classification rules
 
-Rules are data-driven in `scripts/audit_transfers.py` (`FLAG_ARG_RULES`,
+Rules are data-driven in `audits/audit_transfers.py` (`FLAG_ARG_RULES`,
 `FLAG_METHOD_RULES`, `FLAG_SOURCE_RULES`, `SPECIAL_FLAGS`, `CAPABILITY_FLAGS`).
 Flags are collected first; the bucket is then assigned in this order:
 
@@ -316,8 +316,8 @@ Most frequent flags overall (including capability and informational flags such a
 
 ## Outputs
 
-- `bench-out/PAIR_AUDIT.csv` — one row per operator class
-- `bench-out/PAIR_AUDIT.json` — same data plus the summary block
+- `audits/results/PAIR_AUDIT.csv` — one row per operator class
+- `audits/results/PAIR_AUDIT.json` — same data plus the summary block
 - `docs/PAIR_AUDIT.md` — this report
 - `just rank-capabilities` — sole-blocker / total-any / greedy set-cover over the CSV
 

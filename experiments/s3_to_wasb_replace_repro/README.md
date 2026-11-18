@@ -41,12 +41,12 @@ providers:
 
 ```bash
 # Mocked-hook unit check + fails-before / passes-after (no emulators)
-experiments/gcs_to_gcs_shim/.venv/bin/python \
+shims/gcs_to_gcs_shim/.venv/bin/python \
   experiments/s3_to_wasb_replace_repro/repro.py --unit --before-after
 
 # Optional: S3Mock + Azurite (starts nothing by itself; start emulators first)
-just up   # or: docker compose up -d s3 azure
-experiments/gcs_to_gcs_shim/.venv/bin/python \
+just up   # or: docker compose -f emulators/docker-compose.yml up -d s3 azure
+shims/gcs_to_gcs_shim/.venv/bin/python \
   experiments/s3_to_wasb_replace_repro/repro.py --emulator
 just down # stop emulators when finished
 ```

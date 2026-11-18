@@ -15,10 +15,10 @@ Azure/adlfs problem.
 
 ## Root cause: two measurement bugs and one real cost, not Azure
 
-Evidence: `scripts/profile_listing.py` (counts real HTTP requests at the
-aiohttp/urllib3 transport via `generic_transfer.wire`), `scripts/probe_client_cost.py`,
-and a cProfile of the old path. Snapshots: `bench-out/PROFILE_LISTING.md`,
-`bench-out/PROFILE_LISTING_cprofile.txt`, `bench-out/CLIENT_COST.md`.
+Evidence: `benchmarks/profile_listing.py` (counts real HTTP requests at the
+aiohttp/urllib3 transport via `generic_transfer.wire`), `benchmarks/probe_client_cost.py`,
+and a cProfile of the old path. Snapshots: `benchmarks/results/PROFILE_LISTING.md`,
+`benchmarks/results/PROFILE_LISTING_cprofile.txt`, `benchmarks/results/CLIENT_COST.md`.
 
 1. **The generic copier made ~2x the HTTP requests, on every provider (real cost).**
    `list_transfer_keys` called `is_folder_marker` -> `fs.info()` (one HEAD) for
@@ -93,14 +93,14 @@ S3 2.658 s -> 0.092 s, GCS 1.042 s -> 0.018 s.
 After the fix the generic sequential path makes the same number of GET/PUT
 requests as naive, minus the markers, and its time is within a few percent
 of naive on localhost (both are dominated by one GET + one PUT per object).
-The real-RTT effect is in `BENCH_SCALE.md` -> `wire_latency`.
+The real-RTT effect is in [`benchmarks/results/BENCH_SCALE.md`](../benchmarks/results/BENCH_SCALE.md) -> `wire_latency`.
 
-Reproduce: `just up && just profile-listing`, `.venv/bin/python scripts/probe_client_cost.py`,
+Reproduce: `just up && just profile-listing`, `.venv/bin/python benchmarks/probe_client_cost.py`,
 `just probe-emulators`.
 
 ## Full-scale confirmation (1000 objects, median of 5, 2026-11-10)
 
-The full run in `bench-out/BENCH_SCALE.md` confirms the same picture at
+The full run in `benchmarks/results/BENCH_SCALE.md` confirms the same picture at
 1000 × 4 KiB objects. After the listing and baseline fixes, generic
 sequential is within a few percent of naive on every pair, including
 Azure sources. The old per-key path (`generic_sequential_per_key`) is

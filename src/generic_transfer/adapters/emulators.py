@@ -1,8 +1,10 @@
 """Build fsspec filesystems pointed at local object-store emulators.
 
 Each flavour returns an :class:`EmulatorFS` with a configured fsspec handle.
-This module is the single place that knows how S3Mock/MinIO, fake-gcs-server,
-and Azurite differ. Callers stay flavour-agnostic.
+Connection details live in :mod:`generic_transfer.adapters.systems` (one
+module per system). This module loads ``emulators/emulators.env``, builds
+the filesystem, and owns seeding / listing helpers. Callers stay
+flavour-agnostic.
 
 Notes discovered while wiring the emulators (see README findings table):
 
@@ -23,6 +25,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+# Re-exported under the old private names. Shim code imports these from here.
+from .systems.azure import storage_options as _azure_storage_options  # noqa: F401
+from .systems.gcs import storage_options as _gcs_storage_options  # noqa: F401
+from .systems.s3 import storage_options as _s3_storage_options  # noqa: F401
+
 Flavour = Literal["s3", "gcs", "azure"]
 
 
@@ -33,9 +40,9 @@ def _strip_quotes(val: str) -> str:
 
 
 def load_emulator_env(path: str | Path | None = None) -> None:
-    """Load ``emulators.env`` into ``os.environ`` (does not override existing)."""
+    """Load ``emulators/emulators.env`` into ``os.environ`` (does not override existing)."""
     if path is None:
-        path = Path(__file__).resolve().parents[3] / "emulators.env"
+        path = Path(__file__).resolve().parents[3] / "emulators" / "emulators.env"
     path = Path(path)
     if not path.is_file():
         return
@@ -57,107 +64,26 @@ class EmulatorFS:
     storage_options: dict[str, Any]
 
 
-def _s3_storage_options() -> dict[str, Any]:
-    backend = os.environ.get("EMULATOR_S3_BACKEND", "s3mock")
-    if backend == "minio":
-        endpoint = os.environ.get("MINIO_ENDPOINT", "http://127.0.0.1:19000")
-        key = os.environ.get("MINIO_ACCESS_KEY", "minioadmin")
-        secret = os.environ.get("MINIO_SECRET_KEY", "minioadmin")
-    else:
-        endpoint = os.environ.get("S3_ENDPOINT", "http://127.0.0.1:19090")
-        key = os.environ.get("S3_ACCESS_KEY", "any")
-        secret = os.environ.get("S3_SECRET_KEY", "any")
-    return {
-        "key": key,
-        "secret": secret,
-        "client_kwargs": {
-            "endpoint_url": endpoint,
-            "region_name": os.environ.get("S3_REGION", "us-east-1"),
-        },
-        "config_kwargs": {"s3": {"addressing_style": "path"}},
-        "use_listings_cache": False,
-    }
-
-
-def _gcs_storage_options() -> dict[str, Any]:
-    endpoint = os.environ.get("GCS_ENDPOINT", "http://127.0.0.1:14443")
-    # google-cloud-storage accepts ``host:port`` or ``http://host:port``.
-    host = os.environ.get("STORAGE_EMULATOR_HOST") or endpoint
-    if "://" not in host:
-        host = f"http://{host}"
-    os.environ["STORAGE_EMULATOR_HOST"] = host
-    return {
-        "endpoint_url": endpoint,
-        "project": os.environ.get("GCS_PROJECT", "demo"),
-        "token": "anon",
-        "use_listings_cache": False,
-    }
-
-
-def _azure_storage_options() -> dict[str, Any]:
-    conn = os.environ.get(
-        "AZURE_CONNECTION_STRING",
-        "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
-        "AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
-        "BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;",
-    )
-    return {
-        "connection_string": conn,
-        "account_name": os.environ.get("AZURE_ACCOUNT_NAME", "devstoreaccount1"),
-        "use_listings_cache": False,
-    }
-
-
 def make_fs(flavour: Flavour, *, bucket: str | None = None) -> EmulatorFS:
     """Return a configured fsspec filesystem for ``flavour``."""
     load_emulator_env()
     if flavour == "s3":
-        import s3fs
-
-        opts = _s3_storage_options()
-        bucket = bucket or os.environ.get("S3_SRC_BUCKET", "src-bucket")
-        fs = s3fs.S3FileSystem(**opts)
-        return EmulatorFS(
-            flavour="s3",
-            fs=fs,
-            bucket=bucket,
-            root_url=f"s3://{bucket}",
-            endpoint=opts["client_kwargs"]["endpoint_url"],
-            storage_options=opts,
-        )
-    if flavour == "gcs":
-        # Pin to the HTTP JSON client. gcsfs 2026.10+ defaults to the gRPC
-        # ExtendedGcsFileSystem, which cannot reach fake-gcs-server.
-        from gcsfs.core import GCSFileSystem
-
-        opts = _gcs_storage_options()
-        bucket = bucket or os.environ.get("GCS_SRC_BUCKET", "src-bucket")
-        fs = GCSFileSystem(**opts)
-        return EmulatorFS(
-            flavour="gcs",
-            fs=fs,
-            bucket=bucket,
-            root_url=f"gs://{bucket}",
-            endpoint=opts["endpoint_url"],
-            storage_options=opts,
-        )
-    if flavour == "azure":
-        import adlfs
-
-        opts = _azure_storage_options()
-        bucket = bucket or os.environ.get("AZURE_SRC_CONTAINER", "src-container")
-        fs = adlfs.AzureBlobFileSystem(**opts)
-        return EmulatorFS(
-            flavour="azure",
-            fs=fs,
-            bucket=bucket,
-            root_url=f"abfs://{bucket}",
-            endpoint=os.environ.get(
-                "AZURE_BLOB_ENDPOINT", "http://127.0.0.1:10000/devstoreaccount1"
-            ),
-            storage_options=opts,
-        )
-    raise ValueError(f"unknown flavour: {flavour!r}")
+        from .systems.s3 import open_filesystem
+    elif flavour == "gcs":
+        from .systems.gcs import open_filesystem
+    elif flavour == "azure":
+        from .systems.azure import open_filesystem
+    else:
+        raise ValueError(f"unknown flavour: {flavour!r}")
+    fs, name, root_url, endpoint, opts = open_filesystem(bucket=bucket)
+    return EmulatorFS(
+        flavour=flavour,
+        fs=fs,
+        bucket=name,
+        root_url=root_url,
+        endpoint=endpoint,
+        storage_options=opts,
+    )
 
 
 def ensure_bucket(emu: EmulatorFS) -> None:

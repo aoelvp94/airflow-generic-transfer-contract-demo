@@ -155,7 +155,7 @@ def _emulator_env() -> None:
     sys.path.insert(0, str(REPO / "src"))
     from generic_transfer.adapters.emulators import load_emulator_env
 
-    load_emulator_env(REPO / "emulators.env")
+    load_emulator_env(REPO / "emulators" / "emulators.env")
     # Inherited session env can disable normal connection lookup.
     os.environ.pop("AIRFLOW__CORE__UNIT_TEST_MODE", None)
     # Valid JSON (double quotes). %r produces single quotes, which from_json rejects.

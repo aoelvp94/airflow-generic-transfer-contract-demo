@@ -35,7 +35,7 @@ bench-scale:
 bench-scale-quick:
 	.venv/bin/python scripts/bench_scale.py --quick --rounds 3
 
-# Restart emulators first: S3Mock slows down as objects accumulate (see docs/EMULATORS.md).
+# Restart emulators first: S3Mock slows down as objects accumulate (see docs/AZURE_SLOWDOWN.md).
 bench-scale-fresh:
 	./scripts/emulators.sh down
 	./scripts/emulators.sh up
@@ -63,21 +63,21 @@ rank-capabilities:
 	.venv/bin/python scripts/rank_capabilities.py
 
 # Run unmodified upstream GCSToGCSOperator unit tests against the file-contract shim.
-# Uses a dedicated venv under experiments/gcs_to_gcs_shim/.venv (not the demo venv).
+# Uses a dedicated venv under shims/gcs_to_gcs_shim/.venv (not the demo venv).
 # Does not start emulators. Times out after 3 minutes.
 experiment-gcs-to-gcs:
-	@if [ ! -x experiments/gcs_to_gcs_shim/.venv/bin/python ]; then echo "experiment venv missing; see just experiment-gcs-to-gcs"; exit 1; fi
-	timeout 180 env AIRFLOW_SRC="$${AIRFLOW_SRC:-/workspace/airflow-src}" experiments/gcs_to_gcs_shim/.venv/bin/python experiments/gcs_to_gcs_shim/run_upstream.py
+	@if [ ! -x shims/gcs_to_gcs_shim/.venv/bin/python ]; then echo "experiment venv missing; see just experiment-gcs-to-gcs"; exit 1; fi
+	timeout 180 env AIRFLOW_SRC="$${AIRFLOW_SRC:-/workspace/airflow-src}" shims/gcs_to_gcs_shim/.venv/bin/python shims/gcs_to_gcs_shim/run_upstream.py
 
 e2e: up test-all bench bench-emulators bench-scale-quick bench-adbc
 
 check: test bench
 
 reproduce: install e2e
-	@echo "Results in bench-out/ (BENCH.md, BENCH_SCALE_QUICK.md, BENCH_ADBC.md). Full scale run: just bench-scale-fresh"
+	@echo "Results in benchmarks/results/ (BENCH.md, BENCH_SCALE_QUICK.md, BENCH_ADBC.md). Full scale run: make bench-scale-fresh"
 
 experiment-s3-copy:
-	timeout 180 env AIRFLOW_SRC="$${AIRFLOW_SRC:-/workspace/airflow-src}" experiments/gcs_to_gcs_shim/.venv/bin/python experiments/s3_copy_shim/run_upstream.py
+	timeout 180 env AIRFLOW_SRC="$${AIRFLOW_SRC:-/workspace/airflow-src}" shims/gcs_to_gcs_shim/.venv/bin/python shims/s3_copy_shim/run_upstream.py
 
 experiment-azure-copy:
-	timeout 180 env AIRFLOW_SRC="$${AIRFLOW_SRC:-/workspace/airflow-src}" experiments/gcs_to_gcs_shim/.venv/bin/python experiments/azure_copy_shim/run_upstream.py
+	timeout 180 env AIRFLOW_SRC="$${AIRFLOW_SRC:-/workspace/airflow-src}" shims/gcs_to_gcs_shim/.venv/bin/python shims/azure_copy_shim/run_upstream.py
