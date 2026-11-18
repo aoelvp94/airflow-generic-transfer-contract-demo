@@ -2,7 +2,7 @@
 #
 # Default S3 backend on this box: Adobe S3Mock (MinIO Docker Hub pulls were
 # denied / dl.min.io returned 410). Reviewers with Docker Hub access can switch
-# the s3 service to minio/minio — see comments below and docs/EMULATORS.md.
+# the s3 service to minio/minio — see README Emulators section.
 #
 # Pinned images used when this compose was validated:
 #   adobe/s3mock:3.12.0                         @sha256:9da9c179bc0d1cb6986a40fd7ffbbc6deee11522b3892217ca350d65596126fa
