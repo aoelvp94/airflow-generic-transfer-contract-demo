@@ -1,0 +1,82 @@
+# Object-store emulators for cross-cloud file-transfer evidence.
+#
+# Default S3 backend on this box: Adobe S3Mock (MinIO Docker Hub pulls were
+# denied / dl.min.io returned 410). Reviewers with Docker Hub access can switch
+# the s3 service to minio/minio — see comments below and docs/EMULATORS.md.
+#
+# Pinned images used when this compose was validated:
+#   adobe/s3mock:3.12.0                         @sha256:9da9c179bc0d1cb6986a40fd7ffbbc6deee11522b3892217ca350d65596126fa
+#   fsouza/fake-gcs-server:1.56.1               @sha256:797ce226d62f947c009dc40246b30cfb456b8473d8241407f9d6f2c04e4d69ef
+#   mcr.microsoft.com/azure-storage/azurite:3.37.0  @sha256:830430c1da1a2d537e08f3e6764dd1f5ae00cf0346bcaf625b968ec3f0971fd5
+#
+# Usage:
+#   export DOCKER_HOST=tcp://127.0.0.1:2375   # only if the daemon is TCP-only
+#   just up
+#   just test-integration
+#   just down
+
+services:
+  s3:
+    image: adobe/s3mock:3.12.0
+    container_name: gtc-s3
+    ports:
+      - "19090:9090"   # HTTP API
+      - "19190:9191"   # HTTPS API (unused by tests)
+    environment:
+      # Initial buckets created on startup (comma-separated).
+      initialBuckets: src-bucket,dst-bucket
+      COM_ADOBE_TESTING_S3MOCK_STORE_REGION: us-east-1
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:9090/"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 3s
+
+  # Preferred S3 emulator when pullable. Enable with:
+  #   docker compose --profile minio up -d s3-minio
+  # and point EMULATOR_S3_BACKEND=minio (see emulators.env).
+  s3-minio:
+    profiles: ["minio"]
+    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    container_name: gtc-s3-minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "19000:9000"
+      - "19001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  gcs:
+    image: fsouza/fake-gcs-server:1.56.1
+    container_name: gtc-gcs
+    command: ["-scheme", "http", "-host", "0.0.0.0", "-port", "4443", "-external-url", "http://127.0.0.1:14443", "-backend", "memory"]
+    ports:
+      - "14443:4443"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:4443/storage/v1/b"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 3s
+
+  azure:
+    image: mcr.microsoft.com/azure-storage/azurite:3.37.0
+    container_name: gtc-azure
+    command: azurite --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0 --loose --skipApiVersionCheck
+    ports:
+      - "10000:10000"
+      - "10001:10001"
+      - "10002:10002"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:10000/',r=>process.exit(r.statusCode?0:1)).on('error',()=>process.exit(1))"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 3s

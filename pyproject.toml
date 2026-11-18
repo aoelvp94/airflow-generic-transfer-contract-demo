@@ -15,6 +15,14 @@ dependencies = [
 
 [project.optional-dependencies]
 iceberg = ["pyiceberg[pyarrow,sql-sqlite]", "pyarrow"]
+emulators = [
+  "s3fs>=2024.1.0",
+  "gcsfs>=2024.1.0",
+  "adlfs>=2024.1.0",
+  "boto3>=1.34",
+  "google-cloud-storage>=2.14",
+  "azure-storage-blob>=12.19",
+]
 dev = ["pytest", "requests-mock"]
 
 [tool.setuptools.packages.find]
@@ -23,4 +31,7 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src", "."]
-markers = ["iceberg: needs pyiceberg optional extra"]
+markers = [
+  "iceberg: needs pyiceberg optional extra",
+  "integration: needs object-store emulators (just up)",
+]
