@@ -1,7 +1,7 @@
 # Emulator bench results
 
-- Captured (UTC): `2026-11-09T21:33:37.286304+00:00`
-- Platform: `Linux-6.12.94+-x86_64-with-glibc2.41`
+- Captured (UTC): `2026-11-09T22:59:58.123868+00:00`
+- Platform: `Linux-6.12.113+-x86_64-with-glibc2.41`
 - Python: `3.12.15`
 - S3 backend: `s3mock` at `http://127.0.0.1:19090`
 - GCS: `http://127.0.0.1:14443`
@@ -27,18 +27,18 @@ Notes:
 
 | Pair | Path | Cold (s) | Warm median (s) | Median (s) | Objects | Requests | Markers copied? |
 |---|---|---:|---:|---:|---:|---:|---|
-| `s3->gcs` | naive | 0.0475 | 0.0444 | 0.0449 | 4 | 9 | True |
-| `s3->gcs` | generic | 0.0391 | 0.0346 | 0.0359 | 2 | 5 | False |
-| `gcs->s3` | naive | 0.0461 | 0.0457 | 0.0461 | 4 | 9 | True |
-| `gcs->s3` | generic | 0.0258 | 0.0244 | 0.0245 | 2 | 5 | False |
-| `s3->azure` | naive | 0.0554 | 0.0512 | 0.0533 | 4 | 9 | True |
-| `s3->azure` | generic | 0.0429 | 0.0372 | 0.0382 | 2 | 5 | False |
-| `azure->s3` | naive | 0.0516 | 0.0544 | 0.0535 | 4 | 9 | True |
-| `azure->s3` | generic | 0.0471 | 0.0468 | 0.0468 | 2 | 5 | False |
-| `gcs->azure` | naive | 0.0317 | 0.0291 | 0.0298 | 4 | 9 | True |
-| `gcs->azure` | generic | 0.0174 | 0.0177 | 0.0174 | 2 | 5 | False |
-| `azure->gcs` | naive | 0.0291 | 0.0294 | 0.0292 | 4 | 9 | True |
-| `azure->gcs` | generic | 0.0339 | 0.0337 | 0.0339 | 2 | 5 | False |
+| `s3->gcs` | naive | 0.0505 | 0.0540 | 0.0528 | 4 | 9 | True |
+| `s3->gcs` | generic | 0.0408 | 0.0427 | 0.0424 | 2 | 5 | False |
+| `gcs->s3` | naive | 0.0320 | 0.0331 | 0.0320 | 4 | 9 | True |
+| `gcs->s3` | generic | 0.0257 | 0.0177 | 0.0178 | 2 | 5 | False |
+| `s3->azure` | naive | 0.0667 | 0.0708 | 0.0703 | 4 | 9 | True |
+| `s3->azure` | generic | 0.0528 | 0.0529 | 0.0528 | 2 | 5 | False |
+| `azure->s3` | naive | 0.0541 | 0.0406 | 0.0411 | 4 | 9 | True |
+| `azure->s3` | generic | 0.0444 | 0.0447 | 0.0444 | 2 | 5 | False |
+| `gcs->azure` | naive | 0.0323 | 0.0305 | 0.0318 | 4 | 9 | True |
+| `gcs->azure` | generic | 0.0172 | 0.0190 | 0.0190 | 2 | 5 | False |
+| `azure->gcs` | naive | 0.0343 | 0.0270 | 0.0274 | 4 | 9 | True |
+| `azure->gcs` | generic | 0.0355 | 0.0384 | 0.0382 | 2 | 5 | False |
 
 ## Takeaway
 

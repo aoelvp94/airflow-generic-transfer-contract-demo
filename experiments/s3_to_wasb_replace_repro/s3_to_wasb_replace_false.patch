@@ -1,0 +1,33 @@
+# Local patch only — not applied to airflow-src or any remote.
+# Against apache/airflow main SHA 057f009928112df519ed6fc80f54d675857c4b9d
+# (s3_to_wasb.py is unchanged from 2b59699b0fe9683c418806a334b47077513bde5a).
+#
+# Apply with (from an airflow clone, do not apply here unless testing):
+#   git apply experiments/s3_to_wasb_replace_repro/s3_to_wasb_replace_false.patch
+#
+diff --git a/providers/microsoft/azure/src/airflow/providers/microsoft/azure/transfers/s3_to_wasb.py b/providers/microsoft/azure/src/airflow/providers/microsoft/azure/transfers/s3_to_wasb.py
+index 82923ea..6292ffe 100644
+--- a/providers/microsoft/azure/src/airflow/providers/microsoft/azure/transfers/s3_to_wasb.py
++++ b/providers/microsoft/azure/src/airflow/providers/microsoft/azure/transfers/s3_to_wasb.py
+@@ -265,8 +265,19 @@ class S3ToAzureBlobStorageOperator(BaseOperator):
+ 
+             # This conditional block only does one thing - it alters the elements in the files_to_move list.
+             # This list is being trimmed to remove the existing files in the Azure Blob (as mentioned above)
+-            existing_files = azure_blob_files if azure_blob_files else []
+-            files_to_move = list(set(files_to_move) - set(existing_files))
++            existing_files = set(azure_blob_files or [])
++            # files_to_move holds names relative to s3_prefix (or the S3 basename when
++            # s3_key is set). WasbHook.get_blobs_list_recursive returns *full* blob
++            # names, e.g. "{blob_prefix}/{relative}". Subtracting the two sets as-is
++            # never matches, so replace=False still transfers (and can overwrite) an
++            # existing dest blob. Also accept a relative name, which is what current
++            # unit tests mock.
++            files_to_move = [
++                f
++                for f in files_to_move
++                if f not in existing_files
++                and self._create_key(self.blob_name, self.blob_prefix, f) not in existing_files
++            ]
+ 
+         return files_to_move
+ 

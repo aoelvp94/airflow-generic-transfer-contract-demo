@@ -1,0 +1,21 @@
+{
+  "timestamp_utc": "2026-11-10T06:51:26.290146+00:00",
+  "samples": 50,
+  "results": {
+    "s3": {
+      "fresh_client_ms": 5.643076499836752,
+      "cached_client_ms": 1.599128999714594,
+      "overhead_ms": 4.043947500122158
+    },
+    "gcs": {
+      "fresh_client_ms": 2.413892999811651,
+      "cached_client_ms": 0.6527235000248766,
+      "overhead_ms": 1.7611694997867744
+    },
+    "azure": {
+      "fresh_client_ms": 2.73773950038958,
+      "cached_client_ms": 2.3255819996848004,
+      "overhead_ms": 0.4121575007047795
+    }
+  }
+}

@@ -45,9 +45,12 @@ def main() -> int:
     from generic_transfer.adapters.pair_baseline import PAIRS, RequestCounter, naive_pair_copy
     from tests.conftest import emulators_available
 
+    from generic_transfer import wire
+
     load_emulator_env()
     if not emulators_available():
         raise SystemExit("emulators not up — run: just up")
+    wire.install()
 
     src_bucket = {"s3": "src-bucket", "gcs": "src-bucket", "azure": "src-container"}
     dst_bucket = {"s3": "dst-bucket", "gcs": "dst-bucket", "azure": "dst-container"}
@@ -92,27 +95,24 @@ def main() -> int:
             def write_batches(self, batches, **params):
                 for _ in batches:
                     pass
-                keys = list_transfer_keys(
-                    src.fs, f"{src.bucket}/{prefix}".rstrip("/")
-                )
-                counter.bump(f"list:{src.flavour}", 1)
-                copied = []
+                # Shared FileCopyable path: one listing, markers classified
+                # from it, cat_file GET per object (no per-key HEAD).
                 from generic_transfer.adapters.emulators import put_bytes
+                from generic_transfer.adapters.file_copy import copy_files_sequential
 
-                for full_key in keys:
-                    rel = full_key.split(f"{src.bucket}/", 1)[-1]
-                    if rel.startswith(prefix):
-                        rel = rel[len(prefix) :].lstrip("/")
-                    dest_key = f"{dest_prefix.rstrip('/')}/{rel}"
-                    with src.fs.open(full_key, "rb") as rf:
-                        data = rf.read()
-                    counter.bump(f"get:{src.flavour}", 1)
-                    put_bytes(dst, dest_key, data)
-                    counter.bump(f"put:{dst.flavour}", 1)
-                    copied.append(dest_key)
+                res = copy_files_sequential(
+                    source_fs=src.fs,
+                    source_bucket=src.bucket,
+                    source_prefix=prefix,
+                    put=lambda k, d: put_bytes(dst, k, d),
+                    dest_prefix=dest_prefix,
+                    counter=counter,
+                )
+                copied = res["copied"]
                 return {"copied": copied, "count": len(copied)}
 
         clear_prefix(dst, dest_prefix)
+        wire.reset()
         t0 = time.perf_counter()
         result = GenericRecordTransfer(
             source_hook=EmptySource(),
@@ -120,6 +120,8 @@ def main() -> int:
             destination_hook_params={"source_fs": src.fs, "source_prefix": prefix},
         ).execute()
         elapsed = time.perf_counter() - t0
+        result["http_requests"] = wire.snapshot()
+        result["http_total"] = sum(result["http_requests"].values())
         result["seconds"] = elapsed
         result["requests"] = dict(counter.counts)
         result["request_total"] = counter.total
@@ -153,6 +155,7 @@ def main() -> int:
         def run_naive(i, _src=src, _dst=dst, _src_fl=src_fl, _dst_fl=dst_fl):
             seed_tree_with_markers(_src, args.prefix)
             clear_prefix(_dst, f"naive-{_src_fl}-{_dst_fl}")
+            wire.reset()
             t0 = time.perf_counter()
             r = naive_pair_copy(
                 _src,
@@ -162,6 +165,8 @@ def main() -> int:
                 skip_markers=False,
             )
             r["seconds"] = time.perf_counter() - t0
+            r["http_requests"] = wire.snapshot()
+            r["http_total"] = sum(r["http_requests"].values())
             return r
 
         def run_generic(i, _src_fl=src_fl, _dst_fl=dst_fl):
@@ -186,6 +191,8 @@ def main() -> int:
                     "count": naive_stats["last"]["count"],
                     "requests": naive_stats["last"]["requests"],
                     "request_total": naive_stats["last"]["request_total"],
+                    "http_requests": naive_stats["last"]["http_requests"],
+                    "http_total": naive_stats["last"]["http_total"],
                     "copied_markers": True,
                 },
                 "generic": {
@@ -196,6 +203,8 @@ def main() -> int:
                     "count": generic_stats["last"]["count"],
                     "requests": generic_stats["last"]["requests"],
                     "request_total": generic_stats["last"]["request_total"],
+                    "http_requests": generic_stats["last"]["http_requests"],
+                    "http_total": generic_stats["last"]["http_total"],
                     "copied_markers": False,
                 },
             }
@@ -330,8 +339,11 @@ def _render_md(out: dict) -> str:
         "",
         "## Per-pair copy (naive SDK baseline vs generic)",
         "",
-        "| Pair | Path | Cold (s) | Warm median (s) | Median (s) | Objects | Requests | Markers copied? |",
-        "|---|---|---:|---:|---:|---:|---:|---|",
+        "Requests: *Logical* = list/get/put tally; *HTTP* = real requests on the wire "
+        "(aiohttp/urllib3 transport counter, last round).",
+        "",
+        "| Pair | Path | Cold (s) | Warm median (s) | Median (s) | Objects | Logical | HTTP | Markers copied? |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---|",
     ]
     for row in out["pairs"]:
         for label in ("naive", "generic"):
@@ -339,7 +351,7 @@ def _render_md(out: dict) -> str:
             lines.append(
                 f"| `{row['pair']}` | {label} | {r['cold_s']:.4f} | "
                 f"{r['warm_median_s']:.4f} | {r['median_s']:.4f} | {r['count']} | "
-                f"{r['request_total']} | {r['copied_markers']} |"
+                f"{r['request_total']} | {r.get('http_total', '?')} | {r['copied_markers']} |"
             )
     lines += [
         "",

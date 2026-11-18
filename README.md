@@ -9,9 +9,6 @@ source/destination pair, 2026-11-09).
 No Airflow install required. Fake APIs + local object-store emulators only.
 No employer branding. English throughout.
 
-> Out of scope here: Arrow / ADBC end-to-end GenericTransfer optimisations.
-> That is a separate proposal and must stay on its own thread.
-
 ## Thesis
 
 Airflow today ships ~86 transfer modules (~17,500 lines) across 13 providers.
@@ -21,24 +18,14 @@ concrete proof: the same "skip a zero-byte key that has keys under it" rule was
 applied in four PRs across three providers in six months, and main now carries
 three copies of the same helper.
 
-The structure leaves no other option when each pair is its own operator.
-
-We have solved this before. `common.sql` replaced per-database operators with
-`SQLExecuteQueryOperator` on the `DbApiHook` contract. AIP-14 asked for the
-same for transfers; AIP-58 delivered `ObjectStoragePath` and
-`FileTransferOperator`, but the 28 file-pair operators were never rebased or
-deprecated, and there is still no contract for **record** sources (paginated
-HTTP/REST, SaaS APIs, SQL→file).
-
 This demo shows the missing piece as runnable code:
 
 1. **Capability on the hook** — `read_batches(**params)` / `write_batches(batches, **params)`.
-2. **One generic operator** — forwards `source_hook_params` /
-   `destination_hook_params`, validates at task run time, knows neither vocabulary.
-3. **File destinations through one path** — an `ObjectStoragePath`-like facade
-   (fsspec) plus a shared folder-marker skip.
-4. **Pair operators become thin shells** — `tests/baseline_httptos3.py` and
-   `adapters/pair_baseline.py` stand in for today's pair operators.
+2. **Separate file contract** — `FileCopyable.copy_files(**params)` (not overloaded on record batches).
+3. **One generic operator** — forwards hook params, validates at run time, optional lineage.
+4. **Optional async form** — `aread_batches` / `awrite_batches` sketch for deferrable.
+5. **Discoverability** — `describe_params()` JSON-schema-like; operator rejects bad kwargs.
+6. **Arrow/ADBC fit** — batch payload is `Any`; hooks advertise `batch_format`.
 
 ## Mapping to David's questions
 
@@ -55,27 +42,31 @@ This demo shows the missing piece as runnable code:
 # Requires: Docker (compose v2), uv, and just (or make). On TCP-only Docker daemons:
 #   export DOCKER_HOST=tcp://127.0.0.1:2375
 just reproduce
-# equivalent: just install && just e2e
-# or:          make reproduce
+# or: make reproduce
 ```
 
 Expected:
 
-- `just test-all` → **26 passed** (12 unit + 14 integration).
+- `just test-all` → **67 passed** (47 unit + 20 integration).
 - `just bench` → stock HttpToS3-style keeps page 1 (10/25); generic lands 25/25.
-- `just bench-emulators` → writes `bench-out/BENCH.md` + `bench-out/latest.json`.
-  Naive pair copy lands **4** objects (includes markers); generic lands **2**.
-  Request totals ≈ **9** (naive) vs **5** (generic) per pair on this tree.
+- `just bench-emulators` → naive 4 objects / ~9 req; generic 2 / ~5 (marker tree).
+- `just bench-scale-quick` → large/small/mixed/server-side/latency → `bench-out/BENCH_SCALE.md`.
+- `just bench-scale` → full **100 MiB** + **1000** small objects (slower).
+- `just bench-adbc` → 1M-row Arrow e2e vs rows → `bench-out/BENCH_ADBC.md`.
 
 Individual steps:
 
 ```bash
-just install          # uv venv + extras (dev, iceberg, emulators)
-just up               # S3Mock + fake-gcs-server + Azurite
-just test             # unit only
-just test-integration # needs emulators
-just bench            # in-process HTTP pagination evidence
-just bench-emulators  # cross-cloud file copy + marker findings
+just install              # uv venv + extras (dev, iceberg, emulators, adbc)
+just up                   # S3Mock + fake-gcs-server + Azurite
+just test                 # unit (includes edge + open points + ADBC + pair audit)
+just test-integration     # needs emulators
+just audit                # pair-mapping audit (needs AIRFLOW_SRC or /workspace/airflow-src)
+just rank-capabilities    # sole-blocker / greedy set-cover over PAIR_AUDIT.csv
+just bench                # HTTP pagination evidence
+just bench-emulators      # cross-cloud marker findings
+just bench-scale-quick    # scale/latency (8 MiB / 100 objs)
+just bench-adbc           # Arrow vs rows on the same contract
 just down
 ```
 
@@ -94,23 +85,9 @@ we can reproduce the behaviour of `S3ToGCSOperator`, `GCSToS3Operator`,
 `AzureBlobStorageToS3Operator`, `S3ToAzureBlobStorageOperator`, and the
 zero-byte **folder marker** bug (`dir/` with keys beneath it) end to end.
 
-**S3 backend note.** This box could not pull `minio/minio` (Docker Hub denied)
-or download `dl.min.io` (HTTP 410). Default is **Adobe S3Mock**, which speaks
-enough of the S3 API for path-style listing/get/put and folder markers.
-Reviewers with Docker Hub access can switch:
-
-```bash
-# optional preferred S3
-docker compose --profile minio up -d s3-minio
-# then in emulators.env:
-#   EMULATOR_S3_BACKEND=minio
-#   S3_ENDPOINT=http://127.0.0.1:19000
-#   S3_ACCESS_KEY=minioadmin
-#   S3_SECRET_KEY=minioadmin
-```
-
-A native MinIO binary can also be built with `go install github.com/minio/minio@latest`
-into `./bin/` (gitignored); wire it via the same env vars.
+**S3 backend note.** Default is **Adobe S3Mock** (MinIO Docker Hub pulls were
+denied on this box). Reviewers with Docker Hub access can switch — see earlier
+commits / `EMULATOR_S3_BACKEND=minio` in `emulators.env`.
 
 Connection settings: `emulators.env` (quote Azure's connection string — it
 contains `;`).
@@ -119,35 +96,127 @@ contains `;`).
 
 | Claim (dev-list) | Evidence in this repo | Command |
 |---|---|---|
-| Same folder-marker fix landed 4× across providers | Naive S3→GCS copies 4 keys including `data/` + `data/nested/`; generic copies 2. Shared `is_folder_marker` used once. | `just up && just test-integration -k marker` / `just bench-emulators` |
-| Pagination missing in HttpToS3 / HttpToGCS-style operators | Stock baseline keeps page 1 (10/25); generic + hook pagination lands 25/25. | `just bench` / `just test -k parity` |
+| Same folder-marker fix landed 4× across providers | Naive S3→GCS copies 4 keys including markers; generic copies 2. Shared `list_transfer_keys` used once. | `just up && just test-integration -k marker` / `just bench-emulators` |
+| Pagination missing in HttpToS3-style operators | Stock baseline keeps page 1 (10/25); generic + hook pagination lands 25/25. | `just bench` / `just test -k parity` |
 | Per-pair vs generic behaviour parity (files) | All 6 ordered pairs (S3↔GCS↔Azure) pass the same generic copy assertions. | `just up && just test-integration` |
-| Per-pair vs generic request counts | Naive ≈ 9 req (1 list + 4 get + 4 put); generic ≈ 5 (1 list + 2 get + 2 put) on the marker tree. | `just bench-emulators` → `bench-out/BENCH.md` |
-| fsspec marker behaviour differs by backend | Native SDK always lists trailing-slash markers. `gcsfs.core` keeps them (info `type=directory`). `adlfs` drops the walked prefix marker and keeps nested markers **without** trailing slash. `s3fs` varies. Shared `list_transfer_keys` collapses all three to the real objects. | `just bench-emulators` (findings table) / `tests/test_emulator_pairs.py::test_fsspec_find_differs_on_markers` |
+| Per-pair vs generic request counts | Naive ≈ 9 req; generic ≈ 5 on the marker tree. | `just bench-emulators` |
+| fsspec marker behaviour differs by backend | gcsfs keeps trailing-slash markers; adlfs drops walked prefix / keeps nested without slash; s3fs varies. Shared helper collapses all three. | `just bench-emulators` / `test_fsspec_find_differs_on_markers` |
+| Request count dominates under real RTT | 20 ms injected before every HTTP request, 200 objects: generic sequential ≈ naive (~10 s, ~401 vs ~411 req); per-key listing ~2× slower; `workers=16` ~1.1–1.8 s. | `just bench-scale` → wire_latency |
+| Parallelism is a param, not a new operator | `workers=4/8/16` on `FileCopyable.copy_files`. On 1000 objects, `workers=16` cuts sequential time by ~25–40%. | `just bench-scale` |
+| Same-provider server-side copy | S3 `copy_object` / GCS `copy_blob` / Azure `start_copy_from_url` vs read+write. After sharing the listing helper and caching the SDK client, server-side is faster (3–4 HTTP vs 5–6) and copies the same two files; markers are filtered, not reported as skipped. | `just bench-scale` → server_side |
+| Lineage / discoverability / deferrable | Optional Protocols + tests; async sketch with asyncio. | `just test -k open_points` |
+| File copy ≠ record batches | `FileCopyable` + `GenericFileTransfer`; `write_batches` shim kept for compat. | `just test -k file_copyable` |
+| Arrow/ADBC fits the Protocol | `AdbcSqliteSource/Sink` stream `RecordBatch` through `GenericRecordTransfer`. | `just test -k adbc` / `just bench-adbc` |
+| Some operators stay out of wave one | Partitioning / schema JSON / format-specific pairs deferred. | [`docs/first-wave-exclusions.md`](docs/first-wave-exclusions.md) |
+| How many pair operators map onto one generic op? | Airflow `2b59699b0fe9`: 87 `transfers/` modules / 13 providers (86 excluding `base.py`). Primary (core semantics): 15/84 (17.9%) map cleanly, 43 (51.2%) need a capability, 26 (31.0%) are special. 58/84 (69.0%) would map once capabilities exist. Conservative view (optional special still counts): 12/40/32. Group A (file/record, no SQL): 7/33/4 of 44. | `just audit` / `just rank-capabilities` → [`docs/PAIR_AUDIT.md`](docs/PAIR_AUDIT.md) |
+| Generic looked slower than naive only on Azure sources | Two measurement bugs + the per-key HEAD listing, not an Azure/adlfs issue. After the fix, generic sequential matches naive on all six pairs at 1000 objects. | [`docs/AZURE_SLOWDOWN.md`](docs/AZURE_SLOWDOWN.md) / `just bench-scale` |
 
-Committed snapshot of the last local emulator run: [`bench-out/BENCH.md`](bench-out/BENCH.md).
+Committed snapshots: [`bench-out/BENCH.md`](bench-out/BENCH.md),
+[`bench-out/BENCH_SCALE.md`](bench-out/BENCH_SCALE.md),
+[`bench-out/BENCH_ADBC.md`](bench-out/BENCH_ADBC.md),
+[`bench-out/PAIR_AUDIT.csv`](bench-out/PAIR_AUDIT.csv).
+Azure listing write-up: [`docs/AZURE_SLOWDOWN.md`](docs/AZURE_SLOWDOWN.md).
+
+## Full-scale results
+
+5 rounds on localhost emulators, 2026-11-10 (started 11:30 Asia/Yerevan, wall 62.5 min).
+1000 × 4 KiB objects / 100 MiB large object / 200 objects at 20 ms/request.
+Medians below; max is the slowest of the 5 rounds. Full tables: [`bench-out/BENCH_SCALE.md`](bench-out/BENCH_SCALE.md).
+
+Localhost times are client and emulator CPU, not cloud RTT. Use `wire_latency` for the request-count argument.
+
+### `small_objects` — generic sequential vs naive (median and max, seconds)
+
+| Pair | naive med (max) | generic seq med (max) | generic par_16 med (max) |
+|---|---:|---:|---:|
+| `s3->gcs` | 8.361 (8.638) | 8.772 (8.923) | 6.381 (6.414) |
+| `gcs->s3` | 8.701 (8.952) | 7.255 (7.637) | 5.145 (7.277) |
+| `s3->azure` | 13.693 (14.220) | 13.311 (14.164) | 8.268 (8.412) |
+| `azure->s3` | 12.872 (13.470) | 12.456 (12.668) | 8.612 (9.125) |
+| `gcs->azure` | 10.063 (10.339) | 9.053 (9.302) | 5.769 (6.038) |
+| `azure->gcs` | 10.220 (11.280) | 10.576 (10.769) | 7.410 (7.525) |
+
+Generic sequential HTTP: 2002 (1000 objects). Naive: 2024–2034 (1011 objects, keeps markers).
+
+### `mixed_tree` — generic sequential vs naive (median, seconds)
+
+| Pair | naive | generic seq | generic par_16 |
+|---|---:|---:|---:|
+| `s3->gcs` | 0.079 | 0.041 | 0.033 |
+| `gcs->s3` | 0.062 | 0.033 | 0.024 |
+| `s3->azure` | 0.095 | 0.060 | 0.047 |
+| `azure->s3` | 0.097 | 0.062 | 0.050 |
+| `gcs->azure` | 0.067 | 0.038 | 0.029 |
+| `azure->gcs` | 0.077 | 0.048 | 0.043 |
+
+### `large_object` — 100 MiB, median (max), seconds
+
+| Pair | naive med (max) | generic seq med (max) |
+|---|---:|---:|
+| `s3->gcs` | 0.808 (1.187) | 0.882 (1.001) |
+| `gcs->s3` | 1.068 (1.120) | 0.980 (1.037) |
+| `s3->azure` | 2.122 (2.262) | 2.095 (2.473) |
+| `azure->s3` | 2.071 (**40.479**) | 1.453 (1.708) |
+| `gcs->azure` | 2.349 (2.815) | 2.262 (2.441) |
+| `azure->gcs` | 1.438 (2.165) | 0.962 (1.028) |
+
+The 40.5 s `azure->s3` naive max is one stalled round (other naive rounds were 1.6–2.4 s). Generic stayed flat.
+
+### `wire_latency` — 200 objects, 20 ms / HTTP request, median seconds
+
+| Pair | naive | generic seq | generic per-key | generic par_16 |
+|---|---:|---:|---:|---:|
+| `s3->gcs` | 9.969 | 9.906 | 20.255 | 1.442 |
+| `gcs->s3` | 10.293 | 9.792 | 19.335 | 1.071 |
+| `s3->azure` | 11.255 | 11.408 | 22.208 | 1.661 |
+| `azure->s3` | 11.079 | 11.104 | 22.067 | 1.753 |
+| `gcs->azure` | 10.909 | 10.308 | 19.917 | 1.269 |
+| `azure->gcs` | 10.926 | 10.254 | 21.074 | 1.569 |
+
+### `server_side_same_provider` — after the listing/client fix, median seconds
+
+| Pair | server-side (HTTP) | read/write (HTTP) |
+|---|---:|---:|
+| `s3->s3` | 0.014 (3) | 0.023 (5) |
+| `gcs->gcs` | 0.007 (3) | 0.010 (5) |
+| `azure->azure` | 0.023 (4) | 0.037 (6) |
+
+## Does the contract fit Arrow/ADBC?
+
+**Short answer: yes, with open decisions.** This is a fit check only — not the
+separate Arrow/ADBC GenericTransfer proposal.
+
+| Works (evidence) | Needs a decision |
+|---|---|
+| Protocols take `Any` batches; `isinstance` is structural | Batch-type negotiation when source is Arrow and sink wants rows (or vice versa) |
+| Hooks advertise `batch_format` (`rows` / `record_batch`) | Schema cast policy at operator vs hook boundary |
+| `AdbcSqliteSource` → `AdbcSqliteSink` e2e via `GenericRecordTransfer` | Whether file + record share one operator or stay split (`GenericFileTransfer` vs record) |
+| 1M-row bench: Arrow e2e vs Arrow→rows coercion (`just bench-adbc`) | |
+
+See `src/generic_transfer/adapters/adbc_io.py` and `tests/test_adbc.py`.
 
 ## Layout
 
 ```
 src/generic_transfer/
-  contract.py           BatchReadable / BatchWritable (runtime_checkable Protocol)
-  operator.py           GenericRecordTransfer
+  contract.py           BatchReadable/Writable, FileCopyable, Lineage, Params, Async*
+  operator.py           GenericRecordTransfer, GenericFileTransfer, GenericAsyncRecordTransfer
   pagination.py         Stateless HTTP pagination helpers
   adapters/
-    http_source.py      PaginatedHttpSourceHook
-    file_sink.py        FileBatchSink, ObjectStoreCopySink, DictObjectStore, folder markers
-    iceberg_sink.py     IcebergAppendSink (pyiceberg + SQLite catalog)
-    emulators.py        fsspec + native SDK factory for S3/GCS/Azure emulators
-    pair_baseline.py    Naive per-pair native-SDK copy (pre-fix behaviour)
-fake_api/server.py      In-process Acme/Globex/Initech/Hooli APIs
-docker-compose.yml      S3Mock + fake-gcs-server + Azurite (+ MinIO profile)
-emulators.env           Endpoints and credentials
-scripts/emulators.sh    up / down / wait / status
-scripts/bench.py        HTTP pagination wall time + request counts
-scripts/bench_emulators.py  Cross-cloud cold/warm median + marker findings
-tests/                  Contract, parity, folder-marker, emulator integration
-bench-out/BENCH.md      Last committed emulator bench snapshot
+    http_source.py      PaginatedHttpSourceHook (+ retry, lineage, describe_params, async)
+    file_sink.py        FileBatchSink, ObjectStoreCopySink (FileCopyable), markers
+    file_copy.py        Parallel / sequential / server-side / latency injector
+    iceberg_sink.py     IcebergAppendSink (schema-drift policy + async)
+    adbc_io.py          AdbcSqliteSource/Sink + rows baselines
+    emulators.py        fsspec + native SDK factory; seed large/small/mixed
+    pair_baseline.py    Naive per-pair native-SDK copy
+docs/first-wave-exclusions.md
+docs/AZURE_SLOWDOWN.md
+docs/PAIR_AUDIT.md      AST audit of Airflow pair-transfer operators
+fake_api/server.py
+docker-compose.yml / emulators.env / scripts/   (incl. audit_transfers.py)
+tests/                  contract, parity, markers, emulators, edges, open points, ADBC, pair audit
+bench-out/              BENCH.md, BENCH_SCALE.md, BENCH_ADBC.md, PAIR_AUDIT.csv, CAPABILITY_RANK.md
 ```
 
 ## Bench (local, in-process fake API)
@@ -161,27 +230,15 @@ Acme Orders: 25 records, `limit=10` → 3 pages. 5 rounds, mean wall time.
 
 Re-run: `just bench` → `bench-out/bench.json`.
 
-The point is not raw speed: the stock path is "faster" because it drops pages.
-The generic path is complete, and the pagination capability lives in the hook
-so every destination (file, Iceberg, …) gets it for free.
-
 ## Limits (honest)
 
-- **Lineage** — not modelled. A real design must say whether `write_batches`
-  emits lineage once per transfer (same as `insert_rows` today).
-- **Deferrable** — not modelled. Trigger payloads that carry rows stay on a
-  row path unless the contract grows an async form.
-- **Discoverability** — Protocols are structural; docs and provider metadata
-  still need a way for users to find which hooks advertise which half.
-- **Not Airflow** — `GenericRecordTransfer` is intentionally not a
-  `BaseOperator` subclass so the demo stays dependency-light. Graduating it
-  means wiring template fields and hook conn ids into the real operator.
-- **File-to-file vs records** — the copy sink accepts an empty batch iterator
-  and takes `source_fs` / `source_prefix` via destination params. A production
-  design may want a separate file-level contract rather than overloading
-  record batches.
-- **gcsfs 2026.10+** — defaults to gRPC `ExtendedGcsFileSystem`; this demo
-  pins call sites to `gcsfs.core.GCSFileSystem` so fake-gcs-server works.
+- **Not Airflow** — operators are intentionally not `BaseOperator` subclasses.
+- **Deferrable** — async sketch only; no real Trigger/Deferral integration.
+- **Emulators ≠ cloud** — localhost medians are client overhead; use the
+  latency demo for request-count arguments.
+- **gcsfs 2026.10+** — call sites pin `gcsfs.core.GCSFileSystem` for fake-gcs-server.
+- **Server-side copy** — depends on emulator support; failures are recorded in
+  `BENCH_SCALE.md` rather than hidden.
 
 ## License
 
