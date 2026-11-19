@@ -404,11 +404,10 @@ class _GcsStream:
     def abort(self) -> None:
         if self._done:
             return
-        try:
-            self._fh.close()
-        except Exception:
-            pass
+        # close() would finalize the resumable upload and leave a partial
+        # object. terminate() cancels the session instead.
         self._done = True
+        self._fh.terminate()
 
 
 class _AzureBlockStream:

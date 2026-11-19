@@ -358,24 +358,22 @@ class FileBatchSink:
 
 
 def _append_ndjson(target: ObjectStoragePath, batches: Iterator[Any]) -> tuple[int, int, int]:
-    """Append one NDJSON payload per batch. The file is truncated on the first batch."""
+    """Write one NDJSON payload per batch through a single open handle.
+
+    One ``wb`` open covers the whole run, so object stores without append
+    support (GCS, S3) work, and only the current batch is resident.
+    """
     records = 0
     batch_count = 0
     nbytes = 0
-    started = False
-    for batch in batches:
-        batch_count += 1
-        rows = _rows_of(batch)
-        payload = b"".join(json.dumps(row).encode() + b"\n" for row in rows)
-        mode = "wb" if not started else "ab"
-        with target.fs.open(target.path, mode) as fh:
+    with target.fs.open(target.path, "wb") as fh:
+        for batch in batches:
+            batch_count += 1
+            rows = _rows_of(batch)
+            payload = b"".join(json.dumps(row).encode() + b"\n" for row in rows)
             fh.write(payload)
-        started = True
-        records += len(rows)
-        nbytes += len(payload)
-    if not started:
-        with target.fs.open(target.path, "wb") as fh:
-            fh.write(b"")
+            records += len(rows)
+            nbytes += len(payload)
     return records, batch_count, nbytes
 
 
