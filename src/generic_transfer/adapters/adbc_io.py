@@ -1,8 +1,7 @@
 """ADBC / Arrow adapters for the generic transfer contract.
 
 Evaluates whether ``BatchReadable`` / ``BatchWritable`` accommodate Arrow
-RecordBatches end-to-end (Aldo's separate ADBC proposal). This module is
-evidence only — it is not that proposal.
+RecordBatches end-to-end. This module is evidence only.
 """
 from __future__ import annotations
 
@@ -36,29 +35,18 @@ class AdbcSqliteSource:
 
     def read_batches(self, *, sql: str, batch_size: int | None = None, **_: Any) -> Iterator[Any]:
         import adbc_driver_sqlite.dbapi
-        import pyarrow as pa
 
         size = batch_size or self.batch_size
+        if size <= 0:
+            raise ValueError("batch_size must be positive")
+        # One query. The ADBC reader is iterated; batches are re-chunked to
+        # ``size`` rows and never concatenated into a table of the full result.
+        # The connection stays open until the caller finishes the iterator.
         with adbc_driver_sqlite.dbapi.connect(self.db_path) as conn:
             with conn.cursor() as cur:
                 cur.execute(sql)
-                # adbc_driver_manager Cursor.fetch_record_batch() takes no
-                # batch-size arg; it returns a RecordBatchReader. Re-chunk
-                # with pyarrow if the caller asked for a smaller size.
                 reader = cur.fetch_record_batch()
-                if reader is None:
-                    return
-                batches = list(reader) if hasattr(reader, "__iter__") else [reader]
-                if not batches:
-                    return
-                table = __import__("pyarrow").Table.from_batches(
-                    [b for b in batches if b is not None and getattr(b, "num_rows", 0)]
-                )
-                if table.num_rows == 0:
-                    return
-                for batch in table.to_batches(max_chunksize=size):
-                    if batch.num_rows:
-                        yield batch
+                yield from _chunks_of(reader, size)
 
 
 class AdbcSqliteSink:
@@ -92,34 +80,108 @@ class AdbcSqliteSink:
         **_: Any,
     ) -> dict[str, Any]:
         import adbc_driver_sqlite.dbapi
-        import pyarrow as pa
 
-        tables: list[pa.Table] = []
         batch_count = 0
         rows = 0
-        for batch in batches:
-            batch_count += 1
-            if hasattr(batch, "to_pylist") and not hasattr(batch, "num_columns"):
-                # list[dict] fallback
-                tables.append(pa.Table.from_pylist(batch))
-                rows += len(batch)
-            elif hasattr(batch, "num_rows"):
-                # RecordBatch
-                tables.append(pa.Table.from_batches([batch]))
-                rows += batch.num_rows
-            elif isinstance(batch, list):
-                tables.append(pa.Table.from_pylist(batch))
-                rows += len(batch)
-            else:
-                raise TypeError(type(batch))
-        if not tables:
+        ingested = False
+        schema = None
+        conn = None
+        try:
+            for batch in batches:
+                batch_count += 1
+                arrow = _batch_to_table(batch)
+                if arrow.num_rows == 0:
+                    continue
+                if schema is None:
+                    schema = arrow.schema
+                elif not arrow.schema.equals(schema):
+                    arrow = _align_table(arrow, schema)
+                if conn is None:
+                    conn = adbc_driver_sqlite.dbapi.connect(self.db_path)
+                use_mode = mode if not ingested else "append"
+                with conn.cursor() as cur:
+                    cur.adbc_ingest(table, arrow, mode=use_mode)
+                conn.commit()
+                ingested = True
+                rows += arrow.num_rows
+        finally:
+            if conn is not None:
+                conn.close()
+        if not ingested:
             return {"table": table, "records": 0, "batches": 0}
-        combined = pa.concat_tables(tables, promote_options="default")
-        with adbc_driver_sqlite.dbapi.connect(self.db_path) as conn:
-            with conn.cursor() as cur:
-                cur.adbc_ingest(table, combined, mode=mode)
-            conn.commit()
         return {"table": table, "records": rows, "batches": batch_count, "mode": mode}
+
+
+def _chunks_of(reader: Any, size: int) -> Iterator[Any]:
+    """Re-chunk a reader to at most ``size`` rows without buffering the query."""
+    import pyarrow as pa
+
+    pending: list[Any] = []
+    pending_rows = 0
+    for batch in _iter_reader(reader):
+        offset = 0
+        n = batch.num_rows
+        while offset < n:
+            take = min(size - pending_rows, n - offset)
+            pending.append(batch.slice(offset, take))
+            pending_rows += take
+            offset += take
+            if pending_rows >= size:
+                yield _combine_batches(pending, pa)
+                pending = []
+                pending_rows = 0
+    if pending:
+        yield _combine_batches(pending, pa)
+
+
+def _combine_batches(batches: list[Any], pa: Any) -> Any:
+    if len(batches) == 1:
+        return batches[0]
+    schema = batches[0].schema
+    # One RecordBatch of at most ``batch_size`` rows. The inputs are slices of
+    # the current reader batch, not the whole query.
+    arrays = [pa.concat_arrays([b.column(i) for b in batches]) for i in range(len(schema))]
+    return pa.RecordBatch.from_arrays(arrays, schema=schema)
+
+
+def _iter_reader(reader: Any) -> Iterator[Any]:
+    """Yield record batches from an ADBC reader without collecting them."""
+    if reader is None:
+        return
+    import pyarrow as pa
+
+    if isinstance(reader, pa.RecordBatch):
+        if reader.num_rows:
+            yield reader
+        return
+    for batch in reader:
+        if batch is not None and getattr(batch, "num_rows", 0):
+            yield batch
+
+
+def _batch_to_table(batch: Any) -> Any:
+    import pyarrow as pa
+
+    if hasattr(batch, "num_rows") and hasattr(batch, "num_columns"):
+        return pa.Table.from_batches([batch])
+    if hasattr(batch, "to_pylist") and not hasattr(batch, "num_columns"):
+        return pa.Table.from_pylist(list(batch.to_pylist()))
+    if isinstance(batch, list):
+        return pa.Table.from_pylist(batch)
+    raise TypeError(type(batch))
+
+
+def _align_table(table: Any, schema: Any) -> Any:
+    """Keep ``schema`` columns only. Missing columns become null. Extras are dropped."""
+    import pyarrow as pa
+
+    columns = []
+    for field in schema:
+        if field.name in table.schema.names:
+            columns.append(table.column(field.name).cast(field.type))
+        else:
+            columns.append(pa.nulls(table.num_rows, type=field.type))
+    return pa.Table.from_arrays(columns, schema=schema)
 
 
 class DictRowsSource:

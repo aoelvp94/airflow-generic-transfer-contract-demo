@@ -9,6 +9,7 @@ import requests_mock as rm
 
 from generic_transfer import GenericRecordTransfer
 from generic_transfer.adapters import FileBatchSink, PaginatedHttpSourceHook
+from generic_transfer.adapters.file_sink import load_records
 from generic_transfer.pagination import offset_pagination
 from tests.parity.baseline_httptos3 import HttpToObjectBaseline
 
@@ -81,10 +82,9 @@ def test_generic_matches_paginated_pair_baseline(tmp_path: Path):
 
     assert base_res["records"] == generic_res["records"] == 3
     assert baseline.request_count == source.request_count == 2
-    assert json.loads(store["raw/orders.json"]) == json.loads(
-        (tmp_path / "raw/orders.json").read_text()
-    )
-    assert [r["id"] for r in json.loads((tmp_path / "raw/orders.json").read_text())] == [1, 2, 3]
+    landed = load_records(tmp_path / "raw/orders.json")
+    assert landed == json.loads(store["raw/orders.json"])
+    assert [r["id"] for r in landed] == [1, 2, 3]
 
 
 def test_generic_http_to_file_end_to_end_against_fake_api(tmp_path: Path):
@@ -107,7 +107,7 @@ def test_generic_http_to_file_end_to_end_against_fake_api(tmp_path: Path):
         ).execute()
         assert result["records"] == 25
         assert source.request_count == 3  # 10 + 10 + 5
-        rows = json.loads((tmp_path / "raw/orders.json").read_text())
+        rows = load_records(tmp_path / "raw/orders.json")
         assert len(rows) == 25 and rows[0]["product"] == "Acme Widget"
     finally:
         server.shutdown()

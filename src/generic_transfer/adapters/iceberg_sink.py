@@ -45,18 +45,18 @@ class IcebergAppendSink:
         table: str = "records",
         **_: Any,
     ) -> dict[str, Any]:
-        records: list[dict[str, Any]] = []
+        written = 0
         for batch in batches:
-            records.extend(_coerce_rows(batch))
-        if not records:
-            return {"namespace": namespace, "table": table, "records": 0}
-        written = _append_records(
-            records,
-            self.warehouse,
-            namespace,
-            table,
-            retries=self.retries,
-        )
+            rows = _coerce_rows(batch)
+            if not rows:
+                continue
+            written += _append_records(
+                rows,
+                self.warehouse,
+                namespace,
+                table,
+                retries=self.retries,
+            )
         return {"namespace": namespace, "table": table, "records": written}
 
     async def awrite_batches(
@@ -67,18 +67,20 @@ class IcebergAppendSink:
         table: str = "records",
         **params: Any,
     ) -> dict[str, Any]:
-        collected: list[Any] = []
-
-        async def _drain():
-            async for batch in batches:
-                collected.append(batch)
-
-        await _drain()
-
-        def _iter():
-            yield from collected
-
-        return self.write_batches(_iter(), namespace=namespace, table=table, **params)
+        del params
+        written = 0
+        async for batch in batches:
+            rows = _coerce_rows(batch)
+            if not rows:
+                continue
+            written += _append_records(
+                rows,
+                self.warehouse,
+                namespace,
+                table,
+                retries=self.retries,
+            )
+        return {"namespace": namespace, "table": table, "records": written}
 
 
 def _coerce_rows(batch: Any) -> list[dict[str, Any]]:

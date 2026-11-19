@@ -1,20 +1,125 @@
 #!/usr/bin/env python3
-"""Compare Python row dicts vs Arrow RecordBatch end-to-end on the same contract."""
+"""Compare Python row dicts vs Arrow RecordBatch end-to-end on the same contract.
+
+Peak memory is the child process VmHWM (high-water resident set) around the
+transfer, after imports. macOS and hosts without /proc/self/status use
+ru_maxrss; the report names the source. Both the before and after marks are
+recorded for each path.
+"""
 from __future__ import annotations
 
 import json
+import os
+import platform
 import statistics
 import sys
-import time
-import tracemalloc
 from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+
+def _host() -> dict:
+    cpu = ""
+    try:
+        for line in Path("/proc/cpuinfo").read_text().splitlines():
+            if line.startswith("model name"):
+                cpu = line.split(":", 1)[1].strip()
+                break
+    except Exception:
+        cpu = platform.processor()
+    mem_gb = None
+    try:
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            if line.startswith("MemTotal"):
+                mem_gb = round(int(line.split()[1]) / 1024 / 1024, 1)
+    except Exception:
+        pass
+    return {
+        "platform": platform.platform(),
+        "python": platform.python_version(),
+        "cpu_model": cpu,
+        "cpu_count": os.cpu_count(),
+        "mem_total_gb": mem_gb,
+    }
+
+
+def measure_adbc(spec: dict) -> dict:
+    """Child entry: one transfer, VmHWM before and after that transfer."""
+    import adbc_driver_sqlite.dbapi  # noqa: F401
+    import pyarrow as pa  # noqa: F401
+
+    from generic_transfer import GenericRecordTransfer
+    from generic_transfer.adapters.adbc_io import (
+        AdbcSqliteSink,
+        AdbcSqliteSource,
+        DictRowsSink,
+        DictRowsSource,
+    )
+    from generic_transfer.rss import read_peak_rss
+
+    path = spec["path"]
+    db = spec["db"]
+    batch_size = int(spec["batch_size"])
+    sql = spec["sql"]
+    # Libraries are imported above. This mark is the floor before the transfer.
+    before, label = read_peak_rss()
+    import time
+
+    t0 = time.perf_counter()
+    if path == "arrow_adbc_e2e":
+        dst = Path(spec["dst"])
+        if dst.exists():
+            dst.unlink()
+        result = GenericRecordTransfer(
+            source_hook=AdbcSqliteSource(db, batch_size=batch_size),
+            destination_hook=AdbcSqliteSink(dst),
+            source_hook_params={"sql": sql},
+            destination_hook_params={"table": "dst", "mode": "create"},
+        ).execute()
+    elif path == "arrow_to_rows_then_sink":
+        class ArrowToRows:
+            batch_format = "rows"
+
+            def read_batches(self, **params):
+                for batch in AdbcSqliteSource(db, batch_size=batch_size).read_batches(**params):
+                    yield batch.to_pylist()
+
+        sink = DictRowsSink()
+        result = GenericRecordTransfer(
+            source_hook=ArrowToRows(),
+            destination_hook=sink,
+            source_hook_params={"sql": sql},
+        ).execute()
+        sink.rows.clear()
+    elif path == "pure_rows":
+        rows_n = int(spec["rows_n"])
+        pure_rows = [{"id": i, "value": i * 2} for i in range(rows_n)]
+        sink = DictRowsSink()
+        result = GenericRecordTransfer(
+            source_hook=DictRowsSource(pure_rows, batch_size=batch_size),
+            destination_hook=sink,
+        ).execute()
+        sink.rows.clear()
+    else:
+        raise ValueError(path)
+    elapsed = time.perf_counter() - t0
+    peak, label = read_peak_rss()
+    summary = {
+        "records": result.get("records") if isinstance(result, dict) else None,
+        "batches": result.get("batches") if isinstance(result, dict) else None,
+    }
+    return {
+        "before_bytes": before,
+        "peak_bytes": peak,
+        "rss_source": label,
+        "seconds": elapsed,
+        "result": summary,
+    }
 
 
 def main() -> int:
-    sys.path.insert(0, str(ROOT / "src"))
     import argparse
 
     p = argparse.ArgumentParser()
@@ -26,13 +131,9 @@ def main() -> int:
     import pyarrow as pa
     import adbc_driver_sqlite.dbapi
 
-    from generic_transfer import GenericRecordTransfer, batch_format
-    from generic_transfer.adapters.adbc_io import (
-        AdbcSqliteSink,
-        AdbcSqliteSource,
-        DictRowsSink,
-        DictRowsSource,
-    )
+    from generic_transfer import batch_format
+    from generic_transfer.adapters.adbc_io import AdbcSqliteSink, AdbcSqliteSource
+    from generic_transfer.rss import run_in_child
 
     out_dir = ROOT / "benchmarks/results"
     out_dir.mkdir(exist_ok=True)
@@ -49,87 +150,55 @@ def main() -> int:
         with conn.cursor() as cur:
             cur.adbc_ingest("src", table, mode="create")
         conn.commit()
+    del table
 
-    def time_path(name, fn):
+    def time_path(name: str, path_key: str, *, rows_n: int | None = None) -> dict:
         samples = []
         peaks = []
+        befores = []
         last = None
-        for _ in range(args.rounds):
-            tracemalloc.start()
-            t0 = time.perf_counter()
-            last = fn()
-            elapsed = time.perf_counter() - t0
-            _, peak = tracemalloc.get_traced_memory()
-            tracemalloc.stop()
-            samples.append(elapsed)
-            peaks.append(peak / (1024 * 1024))
+        source = None
+        for i in range(args.rounds):
+            spec = {
+                "path": path_key,
+                "db": str(db),
+                "dst": str(out_dir / f"adbc_dst_{path_key}_{i}.db"),
+                "batch_size": args.batch_size,
+                "rows_n": rows_n if rows_n is not None else args.rows,
+                "sql": "SELECT id, value FROM src ORDER BY id",
+            }
+            measured = run_in_child("benchmarks.bench_adbc", "measure_adbc", spec)
+            samples.append(measured["seconds"])
+            peaks.append(measured["peak_bytes"] / (1024 * 1024))
+            befores.append(measured["before_bytes"] / (1024 * 1024))
+            last = measured["result"]
+            source = measured["rss_source"]
         return {
             "name": name,
             "median_s": statistics.median(samples),
             "samples_s": samples,
-            "peak_mb_median": statistics.median(peaks),
+            "rss_before_mb_median": statistics.median(befores),
+            "rss_peak_mb_median": statistics.median(peaks),
+            "rss_before_mb": befores,
+            "rss_peak_mb": peaks,
+            "rss_source": source,
             "last": last,
         }
 
-    # Arrow end-to-end: ADBC source → ADBC sink
-    dst_arrow = out_dir / "adbc_dst_arrow.db"
-
-    def arrow_e2e():
-        if dst_arrow.exists():
-            dst_arrow.unlink()
-        return GenericRecordTransfer(
-            source_hook=AdbcSqliteSource(db, batch_size=args.batch_size),
-            destination_hook=AdbcSqliteSink(dst_arrow),
-            source_hook_params={"sql": "SELECT id, value FROM src ORDER BY id"},
-            destination_hook_params={"table": "dst", "mode": "create"},
-        ).execute()
-
-    # Rows path: materialize dict batches from Arrow, write via DictRowsSink
-    def rows_path():
-        # Pull via ADBC then coerce to rows mid-flight (worst of both worlds) —
-        # and a pure-rows baseline from an in-memory list for the same N would
-        # OOM at 1M on some boxes, so we stream Arrow→rows→list sink.
-        class ArrowToRows:
-            batch_format = "rows"
-
-            def read_batches(self, **params):
-                for batch in AdbcSqliteSource(db, batch_size=args.batch_size).read_batches(**params):
-                    yield batch.to_pylist()
-
-        sink = DictRowsSink()
-        result = GenericRecordTransfer(
-            source_hook=ArrowToRows(),
-            destination_hook=sink,
-            source_hook_params={"sql": "SELECT id, value FROM src ORDER BY id"},
-        ).execute()
-        # Drop rows to free memory between rounds
-        sink.rows.clear()
-        return result
-
-    # Pure in-memory rows for a smaller N (cap at 200k for memory)
     rows_n = min(args.rows, 200_000)
-    pure_rows = [{"id": i, "value": i * 2} for i in range(rows_n)]
-
-    def pure_rows_path():
-        sink = DictRowsSink()
-        result = GenericRecordTransfer(
-            source_hook=DictRowsSource(pure_rows, batch_size=args.batch_size),
-            destination_hook=sink,
-        ).execute()
-        sink.rows.clear()
-        return result
-
-    arrow_stats = time_path("arrow_adbc_e2e", arrow_e2e)
-    rows_stats = time_path("arrow_to_rows_then_sink", rows_path)
-    pure_stats = time_path(f"pure_rows_{rows_n}", pure_rows_path)
+    arrow_stats = time_path("arrow_adbc_e2e", "arrow_adbc_e2e")
+    rows_stats = time_path("arrow_to_rows_then_sink", "arrow_to_rows_then_sink")
+    pure_stats = time_path(f"pure_rows_{rows_n}", "pure_rows", rows_n=rows_n)
 
     doc = {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "host": _host(),
         "rows": args.rows,
         "batch_size": args.batch_size,
         "rounds": args.rounds,
+        "rss_source": arrow_stats["rss_source"],
         "batch_format_source": batch_format(AdbcSqliteSource(db)),
-        "batch_format_sink": batch_format(AdbcSqliteSink(dst_arrow)),
+        "batch_format_sink": batch_format(AdbcSqliteSink(out_dir / "adbc_dst_arrow_adbc_e2e_0.db")),
         "results": [arrow_stats, rows_stats, pure_stats],
         "fit": {
             "works": [
@@ -147,19 +216,26 @@ def main() -> int:
     json_path = out_dir / "BENCH_ADBC.json"
     md_path = out_dir / "BENCH_ADBC.md"
     json_path.write_text(json.dumps(doc, indent=2) + "\n")
+    host = doc["host"]
     lines = [
         "# ADBC / Arrow fit bench",
         "",
         f"- Rows: **{args.rows}** | batch_size: **{args.batch_size}** | rounds: **{args.rounds}**",
         f"- Captured (UTC): `{doc['timestamp_utc']}`",
+        f"- Host: `{host['cpu_model']}` x{host['cpu_count']}, {host['mem_total_gb']} GiB RAM, "
+        f"`{host['platform']}`, Python `{host['python']}`",
+        f"- Peak RSS source: `{doc['rss_source']}` "
+        "(child process, `/proc/self/status` VmHWM; `ru_maxrss` where /proc is absent). "
+        "Before is the mark after imports and before the transfer; after is the mark when "
+        "the transfer returns. Medians are over the rounds.",
         "",
-        "| Path | Median (s) | Peak MB (tracemalloc med) | Records (last) |",
-        "|---|---:|---:|---:|",
+        "| Path | Median (s) | RSS before MB | RSS peak MB | Records (last) |",
+        "|---|---:|---:|---:|---:|",
     ]
     for r in doc["results"]:
         lines.append(
-            f"| `{r['name']}` | {r['median_s']:.3f} | {r['peak_mb_median']:.1f} | "
-            f"{(r['last'] or {}).get('records')} |"
+            f"| `{r['name']}` | {r['median_s']:.3f} | {r['rss_before_mb_median']:.1f} | "
+            f"{r['rss_peak_mb_median']:.1f} | {(r['last'] or {}).get('records')} |"
         )
     lines += [
         "",

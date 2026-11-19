@@ -272,38 +272,136 @@ class ObjectStoragePath:
         self._fs.makedirs(self._path, exist_ok=exist_ok)
 
 
+def _rows_of(batch: Any) -> list[dict[str, Any]]:
+    """One batch as row dicts. Does not accumulate across batches."""
+    if batch is None:
+        return []
+    if hasattr(batch, "to_pylist"):
+        return list(batch.to_pylist())
+    return list(batch)
+
+
+def parse_records(data: bytes) -> list[dict[str, Any]]:
+    """Read a sink object written as NDJSON or as one JSON array.
+
+    NDJSON is the format ``FileBatchSink`` appends, one batch at a time.
+    A JSON array is still accepted so older objects and the ``json_array``
+    content type stay readable.
+    """
+    if not data or not data.strip():
+        return []
+    text = data.decode()
+    if text.lstrip().startswith("["):
+        loaded = json.loads(text)
+        if not isinstance(loaded, list):
+            raise ValueError("JSON array content did not decode to a list")
+        return list(loaded)
+    return [json.loads(line) for line in text.splitlines() if line.strip()]
+
+
+def load_records(path: str | Any) -> list[dict[str, Any]]:
+    """Load records from a local path or an ``ObjectStoragePath`` URL."""
+    if isinstance(path, ObjectStoragePath):
+        return parse_records(path.read_bytes())
+    raw = path if isinstance(path, str) else str(path)
+    parsed = urlparse(raw)
+    if parsed.scheme in ("", "file") and not raw.startswith("memory:"):
+        from pathlib import Path
+
+        file_path = Path(parsed.path if parsed.scheme == "file" else raw)
+        return parse_records(file_path.read_bytes())
+    return parse_records(ObjectStoragePath(raw).read_bytes())
+
+
 class FileBatchSink:
-    """Write record batches as one JSON (or NDJSON) object under a store root."""
+    """Write record batches under a store root without holding the whole run.
+
+    The default ``content_type`` is ``ndjson``: each batch is encoded and
+    appended before the next batch is pulled, so memory tracks one batch
+    rather than the full record set. ``json_array`` streams a single JSON
+    array in one open (still one batch at a time). ``load_records`` reads
+    either format.
+    """
 
     def __init__(self, root: str):
         self.root = ObjectStoragePath(root)
+
+    def read_records(self, *, key: str = "raw/out.json") -> list[dict[str, Any]]:
+        return load_records(self.root.joinpath(key))
 
     def write_batches(
         self,
         batches: Iterator[list[dict[str, Any]]],
         *,
         key: str = "raw/out.json",
-        content_type: str = "json_array",
+        content_type: str = "ndjson",
         **_: Any,
     ) -> dict[str, Any]:
-        records: list[dict[str, Any]] = []
-        batch_count = 0
-        for batch in batches:
-            batch_count += 1
-            records.extend(batch)
-        if content_type == "ndjson":
-            data = "".join(json.dumps(r) + "\n" for r in records).encode()
-        else:
-            data = json.dumps(records).encode()
+        if content_type not in ("ndjson", "json_array"):
+            raise ValueError(f"content_type must be 'ndjson' or 'json_array', got {content_type!r}")
         target = self.root.joinpath(key)
-        target.write_bytes(data)
+        parent = target.path.rsplit("/", 1)[0] if "/" in target.path else ""
+        if parent:
+            target.fs.makedirs(parent, exist_ok=True)
+        if content_type == "json_array":
+            records, batch_count, nbytes = _write_json_array(target, batches)
+        else:
+            records, batch_count, nbytes = _append_ndjson(target, batches)
         return {
             "key": key,
             "url": target.url,
-            "records": len(records),
+            "records": records,
             "batches": batch_count,
-            "bytes": len(data),
+            "bytes": nbytes,
+            "content_type": content_type,
         }
+
+
+def _append_ndjson(target: ObjectStoragePath, batches: Iterator[Any]) -> tuple[int, int, int]:
+    """Append one NDJSON payload per batch. The file is truncated on the first batch."""
+    records = 0
+    batch_count = 0
+    nbytes = 0
+    started = False
+    for batch in batches:
+        batch_count += 1
+        rows = _rows_of(batch)
+        payload = b"".join(json.dumps(row).encode() + b"\n" for row in rows)
+        mode = "wb" if not started else "ab"
+        with target.fs.open(target.path, mode) as fh:
+            fh.write(payload)
+        started = True
+        records += len(rows)
+        nbytes += len(payload)
+    if not started:
+        with target.fs.open(target.path, "wb") as fh:
+            fh.write(b"")
+    return records, batch_count, nbytes
+
+
+def _write_json_array(target: ObjectStoragePath, batches: Iterator[Any]) -> tuple[int, int, int]:
+    """Stream one JSON array. Only the current batch is resident."""
+    records = 0
+    batch_count = 0
+    nbytes = 0
+    with target.fs.open(target.path, "wb") as fh:
+        fh.write(b"[")
+        nbytes += 1
+        first = True
+        for batch in batches:
+            batch_count += 1
+            for row in _rows_of(batch):
+                if not first:
+                    fh.write(b",")
+                    nbytes += 1
+                first = False
+                encoded = json.dumps(row).encode()
+                fh.write(encoded)
+                nbytes += len(encoded)
+                records += 1
+        fh.write(b"]")
+        nbytes += 1
+    return records, batch_count, nbytes
 
 
 class ObjectStoreCopySink:
@@ -365,11 +463,7 @@ class ObjectStoreCopySink:
                 skipped.append(out_key)
                 continue
             with source_fs.open(key, "rb") as rf:
-                data = rf.read()
-            if self._mode == "store":
-                self.destination.put(out_key, data)
-            else:
-                self.destination.joinpath(out_key).write_bytes(data)
+                _stream_into_destination(self, out_key, rf)
             copied.append(out_key)
         return {"copied": copied, "skipped": skipped, "count": len(copied)}
 
@@ -389,3 +483,29 @@ class ObjectStoreCopySink:
         return self.copy_files(
             source_fs=source_fs, source_prefix=source_prefix, **params
         )
+
+
+def _stream_into_destination(sink: "ObjectStoreCopySink", out_key: str, src: Any, *, chunk_size: int = 1024 * 1024) -> None:
+    """Copy ``src`` into the destination in chunks.
+
+    The destination store still holds the finished object. The copy itself
+    keeps one chunk, not a second full buffer from ``read()``.
+    """
+    if sink._mode == "store":
+        with sink.destination.open(out_key, "wb") as dest:
+            _copy_fileobj(src, dest, chunk_size)
+        return
+    target = sink.destination.joinpath(out_key)
+    parent = target.path.rsplit("/", 1)[0] if "/" in target.path else ""
+    if parent:
+        target.fs.makedirs(parent, exist_ok=True)
+    with target.fs.open(target.path, "wb") as dest:
+        _copy_fileobj(src, dest, chunk_size)
+
+
+def _copy_fileobj(src: Any, dest: Any, chunk_size: int) -> None:
+    while True:
+        piece = src.read(chunk_size)
+        if not piece:
+            break
+        dest.write(piece)

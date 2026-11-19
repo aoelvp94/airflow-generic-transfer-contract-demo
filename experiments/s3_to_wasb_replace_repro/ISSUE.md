@@ -1,7 +1,9 @@
 # S3ToAzureBlobStorageOperator replace=False does not skip existing blobs under blob_prefix
 
-Paste into a new Apache Airflow issue using the "Airflow Issue report" form.
-Do not file this automatically. Labels from the template: `kind:bug`, `needs-triage`.
+Filed: https://github.com/apache/airflow/issues/76880 (open, by aoelvp94).
+
+The text below is the draft that was prepared for that report. Labels from the
+template: `kind:bug`, `needs-triage`.
 
 ## Under which category would you file this issue?
 
@@ -105,7 +107,7 @@ Not Applicable
 
 Reproduced every time with `s3_prefix` + `blob_prefix` and a dest blob already at `{blob_prefix}/{relative}`. The `s3_key` + `blob_name` path compares basenames and is a separate case; this report is about the prefix listing path.
 
-Read-only search of `apache/airflow` issues and PRs mentioning `S3ToAzureBlobStorageOperator` and `replace` did not find an existing report of this comparison bug. Closest related work (folder markers, TLS), not this filter:
+This comparison bug is tracked at https://github.com/apache/airflow/issues/76880 (open, filed by aoelvp94). Closest related work (folder markers, TLS), not this filter:
 
 - https://github.com/apache/airflow/pull/76408
 - https://github.com/apache/airflow/pull/76222

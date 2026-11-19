@@ -6,9 +6,11 @@ server-side copy paths used by GenericFileTransfer and the large-scale bench.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 from generic_transfer.adapters.file_sink import (
     _list_transfer_keys_per_key,
@@ -63,36 +65,106 @@ def _read_object(
     source_fs: Any,
     name: str,
     size: int | None,
+    write: Callable[[bytes], None],
     *,
     chunk_size: int | None,
     small_max: int | None = None,
     get_open: Callable[[str], Any] | None = None,
-) -> bytes:
-    """Read one object.
+) -> None:
+    """Stream one object into ``write``. The payload is not returned.
 
     When the size is known from the listing and small, use ``cat_file`` (one
-    GET, no HEAD). Otherwise ``open()`` (fsspec issues a HEAD to learn the
-    size, then ranged GETs of ``block_size``) and read in ``chunk_size`` pieces.
+    GET, no HEAD) and hand that buffer to ``write`` once. Otherwise ``open()``
+    (fsspec issues a HEAD to learn the size, then ranged GETs) and pass each
+    ``chunk_size`` piece to ``write`` before reading the next. Peak held by
+    this function is one chunk, or one small object on the ``cat_file`` path.
+    A known 0-byte object writes nothing.
     """
     if small_max is None:
         small_max = SMALL_OBJECT_MAX_BYTES
     if get_open is None and size is not None and size <= small_max and hasattr(source_fs, "cat_file"):
         if size == 0:
-            return b""  # real 0-byte object (markers were already dropped)
-        return source_fs.cat_file(name, **_cat_kwargs(source_fs))
+            return  # real 0-byte object (markers were already dropped)
+        data = source_fs.cat_file(name, **_cat_kwargs(source_fs))
+        if data:
+            write(data)
+        return
     fh = get_open(name) if get_open is not None else source_fs.open(name, "rb")
     try:
-        if chunk_size and chunk_size > 0:
-            buf = bytearray()
-            while True:
-                piece = fh.read(chunk_size)
-                if not piece:
-                    break
-                buf.extend(piece)
-            return bytes(buf)
-        return fh.read()
+        step = chunk_size if chunk_size and chunk_size > 0 else 1024 * 1024
+        while True:
+            piece = fh.read(step)
+            if not piece:
+                break
+            write(piece)
     finally:
         fh.close()
+
+
+class _ChunkBuffer:
+    """Collect streamed chunks for a destination that only accepts ``bytes``."""
+
+    def __init__(self) -> None:
+        self.parts: list[bytes] = []
+
+    def write(self, data: bytes) -> int:
+        if data:
+            self.parts.append(data)
+        return len(data)
+
+    def getvalue(self) -> bytes:
+        return b"".join(self.parts)
+
+
+def _transfer_object(
+    *,
+    source_fs: Any,
+    full_key: str,
+    size: int | None,
+    dest_key: str,
+    put: Callable[[str, bytes], None] | None,
+    open_writer: Callable[[str], AbstractContextManager[Any]] | None,
+    chunk_size: int | None,
+    get_open: Callable[[str], Any] | None,
+    counter: RequestCounter,
+) -> str:
+    """Copy one key. ``open_writer`` streams; ``put`` is the bytes fallback."""
+    if open_writer is not None:
+        with open_writer(dest_key) as dest:
+            # cat_file delivers the whole small object in one call. write_all
+            # keeps that as a single PUT. Chunked reads must use write().
+            oneshot = (
+                hasattr(dest, "write_all")
+                and get_open is None
+                and size is not None
+                and 0 < size <= SMALL_OBJECT_MAX_BYTES
+                and hasattr(source_fs, "cat_file")
+            )
+            writer = dest.write_all if oneshot else dest.write
+            _read_object(
+                source_fs,
+                full_key,
+                size,
+                writer,
+                chunk_size=chunk_size,
+                get_open=get_open,
+            )
+    else:
+        if put is None:
+            raise ValueError("put or open_writer is required")
+        buf = _ChunkBuffer()
+        _read_object(
+            source_fs,
+            full_key,
+            size,
+            buf.write,
+            chunk_size=chunk_size,
+            get_open=get_open,
+        )
+        put(dest_key, buf.getvalue())
+    counter.bump("get", 1)
+    counter.bump("put", 1)
+    return dest_key
 
 
 @dataclass
@@ -141,7 +213,7 @@ def copy_files_sequential(
     *,
     source_fs: Any,
     source_prefix: str,
-    put: Callable[[str, bytes], None],
+    put: Callable[[str, bytes], None] | None = None,
     source_bucket: str | None = None,
     dest_prefix: str = "",
     chunk_size: int | None = None,
@@ -149,6 +221,7 @@ def copy_files_sequential(
     counter: RequestCounter | None = None,
     get_open: Callable[[str], Any] | None = None,
     listing: str = "single",
+    open_writer: Callable[[str], AbstractContextManager[Any]] | None = None,
 ) -> dict[str, Any]:
     """List (skipping markers) and copy key-by-key, optionally streaming chunks."""
     counter = counter or RequestCounter()
@@ -169,13 +242,19 @@ def copy_files_sequential(
         if dest_key in resume_from or rel in resume_from:
             skipped.append(dest_key)
             continue
-        data = _read_object(
-            source_fs, full_key, entry["size"], chunk_size=chunk_size, get_open=get_open
+        copied.append(
+            _transfer_object(
+                source_fs=source_fs,
+                full_key=full_key,
+                size=entry["size"],
+                dest_key=dest_key,
+                put=put,
+                open_writer=open_writer,
+                chunk_size=chunk_size,
+                get_open=get_open,
+                counter=counter,
+            )
         )
-        counter.bump("get", 1)
-        put(dest_key, data)
-        counter.bump("put", 1)
-        copied.append(dest_key)
     return {
         "copied": copied,
         "skipped": skipped,
@@ -190,7 +269,7 @@ def copy_files_parallel(
     *,
     source_fs: Any,
     source_prefix: str,
-    put: Callable[[str, bytes], None],
+    put: Callable[[str, bytes], None] | None = None,
     source_bucket: str | None = None,
     dest_prefix: str = "",
     workers: int = 8,
@@ -198,6 +277,7 @@ def copy_files_parallel(
     resume_from: set[str] | None = None,
     counter: RequestCounter | None = None,
     listing: str = "single",
+    open_writer: Callable[[str], AbstractContextManager[Any]] | None = None,
 ) -> dict[str, Any]:
     """Bounded thread-pool copy. Request counting is approximate under threads."""
     counter = counter or RequestCounter()
@@ -224,11 +304,17 @@ def copy_files_parallel(
 
     def _one(item: tuple[str, int | None, str]) -> str:
         full_key, size, dest_key = item
-        data = _read_object(source_fs, full_key, size, chunk_size=chunk_size)
-        counter.bump("get", 1)
-        put(dest_key, data)
-        counter.bump("put", 1)
-        return dest_key
+        return _transfer_object(
+            source_fs=source_fs,
+            full_key=full_key,
+            size=size,
+            dest_key=dest_key,
+            put=put,
+            open_writer=open_writer,
+            chunk_size=chunk_size,
+            get_open=None,
+            counter=counter,
+        )
 
     workers = max(1, int(workers))
     with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -356,8 +442,6 @@ class ObjectStoreFileCopyHook:
         return [{"uri": ds, "role": "outlet"}]
 
     def copy_files(self, **params: Any) -> dict[str, Any]:
-        from generic_transfer.adapters.emulators import put_bytes
-
         source_fs = params["source_fs"]
         source_prefix = params["source_prefix"]
         source_bucket = params.get("source_bucket")
@@ -370,21 +454,34 @@ class ObjectStoreFileCopyHook:
         listing = params.get("listing") or "single"
         counter = RequestCounter()
 
+        put: Callable[[str, bytes], None] | None
+        open_writer: Callable[[str], AbstractContextManager[Any]] | None
         if self._put is not None:
             put = self._put
+            open_writer = None
+            if latency_s > 0:
+                injector = LatencyInjector(delay_s=latency_s, counter=None)
+                real_put = put
+
+                def put(key: str, data: bytes, _p=real_put, _i=injector) -> None:  # noqa: F811
+                    time.sleep(_i.delay_s)
+                    _p(key, data)
         elif self.dest_emu is not None:
-            def put(key: str, data: bytes, _emu=self.dest_emu) -> None:
-                put_bytes(_emu, key, data)
+            # Stream into the provider. Peak is about one chunk per worker
+            # (S3 multipart parts are at least 5 MiB).
+            from generic_transfer.adapters.emulators import open_upload
+
+            emu = self.dest_emu
+            step = int(chunk_size) if chunk_size else 1024 * 1024
+
+            def open_writer(key: str, _emu=emu, _step=step, _lat=latency_s):  # noqa: F811
+                if _lat > 0:
+                    time.sleep(_lat)
+                return open_upload(_emu, key, chunk_size=_step)
+
+            put = None
         else:
             raise ValueError("dest_emu or put is required")
-
-        if latency_s > 0:
-            injector = LatencyInjector(delay_s=latency_s, counter=None)
-            real_put = put
-
-            def put(key: str, data: bytes, _p=real_put, _i=injector) -> None:  # noqa: F811
-                time.sleep(_i.delay_s)
-                _p(key, data)
 
         if mode == "server_side":
             source_emu = params.get("source_emu")
@@ -412,6 +509,7 @@ class ObjectStoreFileCopyHook:
                 resume_from=resume_from,
                 counter=counter,
                 listing=listing,
+                open_writer=open_writer,
             )
         # sequential with optional latency on get via monkeypatch-style wrapper
         if latency_s > 0:
@@ -444,4 +542,5 @@ class ObjectStoreFileCopyHook:
             resume_from=resume_from,
             counter=counter,
             listing=listing,
+            open_writer=open_writer,
         )
