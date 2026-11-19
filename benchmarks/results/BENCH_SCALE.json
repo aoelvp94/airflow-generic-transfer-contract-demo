@@ -1,0 +1,4607 @@
+{
+  "env": {
+    "timestamp_utc": "2026-11-10T07:30:59.132551+00:00",
+    "platform": "Linux-6.12.113+-x86_64-with-glibc2.41",
+    "python": "3.12.15",
+    "cpu_model": "Intel(R) Xeon(R) Processor",
+    "cpu_count": 8,
+    "mem_total_gb": 15.6,
+    "docker_server": "29.1.4",
+    "emulator_images": {
+      "gtc-s3": "adobe/s3mock:3.12.0",
+      "gtc-gcs": "fsouza/fake-gcs-server:1.56.1",
+      "gtc-azure": "mcr.microsoft.com/azure-storage/azurite:3.37.0"
+    },
+    "rounds": 5,
+    "size_mb": 100,
+    "small_n": 1000,
+    "small_bytes": 4096,
+    "workers": "4,8,16",
+    "chunk_size": 1048576,
+    "latency_ms": 20.0,
+    "latency_n": 200,
+    "s3_backend": "s3mock",
+    "packages": {
+      "fsspec": "2026.9.0",
+      "s3fs": "2026.9.0",
+      "gcsfs": "2026.10.1",
+      "adlfs": "2026.8.0",
+      "boto3": "1.43.117",
+      "aiohttp": "3.14.5",
+      "urllib3": "2.8.0",
+      "azure.storage.blob": "12.31.1",
+      "google.cloud.storage": "3.17.1"
+    },
+    "wall_clock_s": 3747.179526277001,
+    "server_side_rerun_utc": "2026-11-10T08:44:30.314269+00:00",
+    "server_side_rerun_note": "server_side_same_provider was re-run after fixing per-key is_folder_marker checks and per-key native client construction. Other scenarios are from the original 62.5 min full run."
+  },
+  "caveat": "Emulators on localhost do not represent real cloud latency or throughput. Times without injected latency are mostly client and emulator CPU. The wire_latency scenario adds a fixed delay before every HTTP request to model round-trip time.",
+  "scenarios": {
+    "mixed_tree": [
+      {
+        "pair": "s3->gcs",
+        "modes": {
+          "naive_sequential": {
+            "cold_s": 0.10606622799969045,
+            "warm_median_s": 0.0792757694998727,
+            "median_s": 0.07938838799964287,
+            "samples_s": [
+              0.10606622799969045,
+              0.08593009399919538,
+              0.07677149300070596,
+              0.07916315100010252,
+              0.07938838799964287
+            ],
+            "tracemalloc_peak_median_mb": 0.38509654998779297,
+            "rss_max_mb": 130.74609375,
+            "http_total_median": 15,
+            "last": {
+              "skipped": [],
+              "count": 7,
+              "requests": {
+                "list:s3": 1,
+                "get:s3": 7,
+                "put:gcs": 7
+              },
+              "request_total": 15,
+              "pair": "s3->gcs",
+              "seconds": 0.07938838799964287,
+              "http_requests": {
+                "gcs:put": 7,
+                "s3:get": 7,
+                "s3:list": 1
+              },
+              "http_total": 15
+            }
+          },
+          "generic_sequential_per_key": {
+            "cold_s": 0.15571402599925932,
+            "warm_median_s": 0.1230758239998977,
+            "median_s": 0.12456089799889014,
+            "samples_s": [
+              0.15571402599925932,
+              0.12895082899922272,
+              0.12456089799889014,
+              0.12109999299900664,
+              0.12159075000090525
+            ],
+            "tracemalloc_peak_median_mb": 0.36402416229248047,
+            "rss_max_mb": 130.87109375,
+            "http_total_median": 26,
+            "last": {
+              "skipped": [],
+              "count": 5,
+              "requests": {
+                "list": 1,
+                "get": 5,
+                "put": 5
+              },
+              "request_total": 11,
+              "mode": "sequential",
+              "seconds": 0.12159075000090525,
+              "http_requests": {
+                "gcs:put": 5,
+                "s3:get": 4,
+                "s3:head": 13,
+                "s3:list": 4
+              },
+              "http_total": 26
+            }
+          },
+          "generic_sequential": {
+            "cold_s": 0.04109810199952335,
+            "warm_median_s": 0.04054018399983761,
+            "median_s": 0.040540821999456966,
+            "samples_s": [
+              0.04109810199952335,
+              0.04000886799985892,
+              0.040540821999456966,
+              0.04053954600021825,
+              0.04060475500045868
+            ],
+            "tracemalloc_peak_median_mb": 0.3068428039550781,
+            "rss_max_mb": 130.87109375,
+            "http_total_median": 10,
+            "last": {
+              "skipped": [],
+              "count": 5,
+              "requests": {
+                "list": 1,
+                "get": 5,
+                "put": 5
+              },
+              "request_total": 11,
+              "mode": "sequential",
+              "seconds": 0.04060475500045868,
+              "http_requests": {
+                "gcs:put": 5,
+                "s3:get": 4,
+                "s3:list": 1
+              },
+              "http_total": 10
+            }
+          },
+          "generic_parallel_4": {
+            "cold_s": 0.036321817999123596,
+            "warm_median_s": 0.03331903999969654,
+            "median_s": 0.033556693999344134,
+            "samples_s": [
+              0.036321817999123596,
+              0.03452351000123599,
+              0.03308138600004895,
+              0.033556693999344134,
+              0.032356608999180025
+            ],
+            "tracemalloc_peak_median_mb": 0.3693351745605469,
+            "rss_max_mb": 131.12109375,
+            "http_total_median": 10,
+            "last": {
+              "skipped": [],
+              "count": 5,
+              "requests": {
+                "list": 1,
+                "get": 5,
+                "put": 5
+              },
+              "request_total": 11,
+              "mode": "parallel:4",
+              "seconds": 0.032356608999180025,
+              "http_requests": {
+                "gcs:put": 5,
+                "s3:get": 4,
+                "s3:list": 1
+              },
+              "http_total": 10
+            }
+          },
+          "generic_parallel_8": {
+            "cold_s": 0.03323538000040571,
+            "warm_median_s": 0.03365563999977894,
+            "median_s": 0.03346329899977718,
+            "samples_s": [
+              0.03323538000040571,
+              0.0332689360002405,
+              0.03346329899977718,
+              0.03576535700085515,
+              0.0338479809997807
+            ],
+            "tracemalloc_peak_median_mb": 0.3723583221435547,
+            "rss_max_mb": 131.37109375,
+            "http_total_median": 10,
+            "last": {
+              "skipped": [],
+              "count": 5,
+              "requests": {
+                "list": 1,
+                "get": 5,
+                "put": 5
+              },
+              "request_total": 11,
+              "mode": "parallel:8",
+              "seconds": 0.0338479809997807,
+              "http_requests": {
+                "gcs:put": 5,
+                "s3:get": 4,
+                "s3:list": 1
+              },
+              "http_total": 10
+            }
+          },
+          "generic_parallel_16": {
+            "cold_s": 0.03230286299913132,
+            "warm_median_s": 0.03331116600020323,
+            "median_s": 0.03314500600026804,
+            "samples_s": [
+              0.03230286299913132,
+              0.035196173999793245,
+              0.03314500600026804,
+              0.03203673899952264,
+              0.03347732600013842
+            ],
+            "tracemalloc_peak_median_mb": 0.38870906829833984,
+            "rss_max_mb": 131.37109375,
+            "http_total_median": 10,
+            "last": {
+              "skipped": [],
+              "count": 5,
+              "requests": {
+                "list": 1,
+                "get": 5,
+                "put": 5
+              },
+              "request_total": 11,
+              "mode": "parallel:16",
+              "seconds": 0.03347732600013842,
+              "http_requests": {
+                "gcs:put": 5,
+                "s3:get": 4,
+                "s3:list": 1
+              },
+              "http_total": 10
+            }
+          }
+        }
+      },
+      {
+        "pair": "gcs->s3",
+        "modes": {
+          "naive_sequential": {
+            "cold_s": 0.0723888620013895,
+            "warm_median_s": 0.06081125149921718,
+            "median_s": 0.061773700999765424,
+            "samples_s": [
+              0.0723888620013895,
+              0.061773700999765424,
+              0.05984880199866893,
+              0.05883587999960582,
+              0.06831817499914905
+            ],
+            "tracemalloc_peak_median_mb": 0.10079574584960938,
+            "rss_max_mb": 131.87109375,
+            "http_total_median": 16,
+            "last": {
+              "skipped": [],
+              "count": 7,
+              "requests": {
+                "list:gcs": 1,
+                "get:gcs": 7,
+                "put:s3": 7
+              },
+              "request_total": 15,
+              "pair": "gcs->s3",
+              "seconds": 0.06831817499914905,
+              "http_requests": {
+                "gcs:get": 7,
+                "gcs:list": 1,
+                "gcs:metadata": 1,
+                "s3:put": 7
+              },
+              "http_total": 16
+            }
+          },
+          "generic_sequential_per_key": {
+            "cold_s": 0.0657048670000222,
+            "warm_median_s": 0.06646986549912981,
+            "median_s": 0.0657048670000222,
+            "samples_s": [
+              0.0657048670000222,
+              0.06038082999839389,
+              0.07267259200125409,
+              0.07198604599943792,
+              0.0609536849988217
+            ],
+            "tracemalloc_peak_median_mb": 0.3297586441040039,
+            "rss_max_mb": 131.87109375,
+            "http_total_median": 37,
+            "last": {
+              "skipped": [],
+              "count": 5,
+              "requests": {
+                "list": 1,
+                "get": 5,
+                "put": 5
+              },
+              "request_total": 11,
+              "mode": "sequential",
+              "seconds": 0.0609536849988217,
+              "http_requests": {
+                "gcs:get": 4,
+                "gcs:list": 15,
+                "gcs:metadata": 12,
+                "s3:put": 5
+              },
+              "http_total": 36
+            }
+          },
+          "generic_sequential": {
+            "cold_s": 0.03339667299951543,
+            "warm_median_s": 0.03255909200106544,
+            "median_s": 0.032928568001807434,
+            "samples_s": [
+              0.03339667299951543,
+              0.03218961600032344,
+              0.03177643200069724,
+              0.034321948000069824,
+              0.032928568001807434
+            ],
+            "tracemalloc_peak_median_mb": 0.27797889709472656,
+            "rss_max_mb": 131.99609375,
+            "http_total_median": 10,
+            "last": {
+              "skipped": [],
+              "count": 5,
+              "requests": {
+                "list": 1,
+                "get": 5,
+                "put": 5
+              },
+              "request_total": 11,
+              "mode": "sequential",
+              "seconds": 0.032928568001807434,
+              "http_requests": {
+                "gcs:get": 4,
+                "gcs:list": 1,
+                "s3:put": 5
+              },
+              "http_total": 10
+            }
+          },
+          "generic_parallel_4": {
+            "cold_s": 0.026369382001576014,
+            "warm_median_s": 0.023354575000666955,
+            "median_s": 0.023929380000481615,
+            "samples_s": [
+              0.026369382001576014,
+              0.024017678999371128,
+              0.022779770000852295,
+              0.023929380000481615,
+              0.02259360499920149
+            ],
+            "tracemalloc_peak_median_mb": 0.35109424591064453,
+            "rss_max_mb": 132.24609375,
+            "http_total_median": 10,
+            "last": {
+              "skipped": [],
+              "count": 5,
+              "requests": {
+                "list": 1,
+                "get": 5,
+                "put": 5
+              },
+              "request_total": 11,
+              "mode": "parallel:4",
+              "seconds": 0.02259360499920149,
+              "http_requests": {
+                "gcs:get": 4,
+                "gcs:list": 1,
+                "s3:put": 5
+              },
+              "http_total": 10
+            }
+          },
+          "generic_parallel_8": {
+            "cold_s": 0.0242620570006693,
+            "warm_median_s": 0.024534075500014296,
+            "median_s": 0.024365062001379556,
+            "samples_s": [
+              0.0242620570006693,
+              0.023166637000031187,
+              0.04614906699862331,
+              0.024365062001379556,
+              0.024703088998649037
+            ],
+            "tracemalloc_peak_median_mb": 0.3545246124267578,
+            "rss_max_mb": 132.49609375,
+            "http_total_median": 10,
+            "last": {
+              "skipped": [],
+              "count": 5,
+              "requests": {
+                "list": 1,
+                "get": 5,
+                "put": 5
+              },
+              "request_total": 11,
+              "mode": "parallel:8",
+              "seconds": 0.024703088998649037,
+              "http_requests": {
+                "gcs:get": 4,
+                "gcs:list": 1,
+                "s3:put": 5
+              },
+              "http_total": 10
+            }
+          },
+          "generic_parallel_16": {
+            "cold_s": 0.025437610000153654,
+            "warm_median_s": 0.02374266699916916,
+            "median_s": 0.023813631998564233,
+            "samples_s": [
+              0.025437610000153654,
+              0.023813631998564233,
+              0.023671701999774086,
+              0.02537266200124577,
+              0.022627375999945798
+            ],
+            "tracemalloc_peak_median_mb": 0.34515857696533203,
+            "rss_max_mb": 132.49609375,
+            "http_total_median": 10,
+            "last": {
+              "skipped": [],
+              "count": 5,
+              "requests": {
+                "list": 1,
+                "get": 5,
+                "put": 5
+              },
+              "request_total": 11,
+              "mode": "parallel:16",
+              "seconds": 0.022627375999945798,
+              "http_requests": {
+                "gcs:get": 4,
+                "gcs:list": 1,
+                "s3:put": 5
+              },
+              "http_total": 10
+            }
+          }
+        }
+      },
+      {
+        "pair": "s3->azure",
+        "modes": {
+          "naive_sequential": {
+            "cold_s": 0.11690071299926785,
+            "warm_median_s": 0.09493948850104061,
+            "median_s": 0.09541188700131897,
+            "samples_s": [
+              0.11690071299926785,
+              0.10629602300105034,
+              0.09541188700131897,
+              0.09378384699994058,
+              0.09446709000076225
+            ],
+            "tracemalloc_peak_median_mb": 0.3748798370361328,
+            "rss_max_mb": 132.99609375,
+            "http_total_median": 15,
+            "last": {
+              "skipped": [],
+              "count": 7,
+              "requests": {
+                "list:s3": 1,
+                "get:s3": 7,
+                "put:azure": 7
+              },
+              "request_total": 15,
+              "pair": "s3->azure",
+              "seconds": 0.09446709000076225,
+              "http_requests": {
+                "azure:put": 7,
+                "s3:get": 7,
+                "s3:list": 1
+              },
+              "http_total": 15
+            }
+          },
+          "generic_sequential_per_key": {
+            "cold_s": 0.13993917200059514,
+            "warm_median_s": 0.13464201599981607,
+            "median_s": 0.1387889819998236,
+            "samples_s": [
+              0.13993917200059514,
+              0.1387889819998236,
+              0.13049504999980854,
+              0.12999489100002393,
+              0.1442273060001753
+            ],
+            "tracemalloc_peak_median_mb": 0.39952945709228516,
+            "rss_max_mb": 132.99609375,
+            "http_total_median": 26,
+            "last": {
+              "skipped": [],
+              "count": 5,
+              "requests": {
+                "list": 1,
+                "get": 5,
+                "put": 5
+              },
+              "request_total": 11,
+              "mode": "sequential",
+              "seconds": 0.1442273060001753,
+              "http_requests": {
+                "azure:put": 5,
+                "s3:get": 4,
+                "s3:head": 13,
+                "s3:list": 4
+              },
+              "http_total": 26
+            }
+          },
+          "generic_sequential": {
+            "cold_s": 0.059989684999891324,
+            "warm_median_s": 0.06044358050075971,
+            "median_s": 0.059989684999891324,
+            "samples_s": [
+              0.059989684999891324,
+              0.06112490700070339,
+              0.05751681100082351,
+              0.05976225400081603,
+              0.08222071199998027
+            ],
+            "tracemalloc_peak_median_mb": 0.3443574905395508,
+            "rss_max_mb": 132.99609375,
+            "http_total_median": 10,
+            "last": {
+              "skipped": [],
+              "count": 5,
+              "requests": {
+                "list": 1,
+                "get": 5,
+                "put": 5
+              },
+              "request_total": 11,
+              "mode": "sequential",
+              "seconds": 0.08222071199998027,
+              "http_requests": {
+                "azure:put": 5,
+                "s3:get": 4,
+                "s3:list": 1
+              },
+              "http_total": 10
+            }
+          },
+          "generic_parallel_4": {
+            "cold_s": 0.04684842800088518,
+            "warm_median_s": 0.045594811999762896,
+            "median_s": 0.04676022599960561,
+            "samples_s": [
+              0.04684842800088518,
+              0.04676022599960561,
+              0.04219138699954783,
+              0.044429397999920184,
+              0.04768876800153521
+            ],
+            "tracemalloc_peak_median_mb": 0.5043468475341797,
+            "rss_max_mb": 133.24609375,
+            "http_total_median": 10,
+            "last": {
+              "skipped": [],
+              "count": 5,
+              "requests": {
+                "list": 1,
+                "get": 5,
+                "put": 5
+              },
+              "request_total": 11,
+              "mode": "parallel:4",
+              "seconds": 0.04768876800153521,
+              "http_requests": {
+                "azure:put": 5,
+                "s3:get": 4,
+                "s3:list": 1
+              },
+              "http_total": 10
+            }
+          },
+          "generic_parallel_8": {
+            "cold_s": 0.04350897900076234,
+            "warm_median_s": 0.044927195500349626,
+            "median_s": 0.04486721099965507,
+            "samples_s": [
+              0.04350897900076234,
+              0.04486721099965507,
+              0.044783043000279577,
+              0.04857667800024501,
+              0.04498718000104418
+            ],
+            "tracemalloc_peak_median_mb": 0.45412158966064453,
+            "rss_max_mb": 133.74609375,
+            "http_total_median": 10,
+            "last": {
+              "skipped": [],
+              "count": 5,
+              "requests": {
+                "list": 1,
+                "get": 5,
+                "put": 5
+              },
+              "request_total": 11,
+              "mode": "parallel:8",
+              "seconds": 0.04498718000104418,
+              "http_requests": {
+                "azure:put": 5,
+                "s3:get": 4,
+                "s3:list": 1
+              },
+              "http_total": 10
+            }
+          },
+          "generic_parallel_16": {
+            "cold_s": 0.04854292199888732,
+            "warm_median_s": 0.04443695600002684,
+            "median_s": 0.04669137099881482,
+            "samples_s": [
+              0.04854292199888732,
+              0.05099160999998276,
+              0.04669137099881482,
+              0.04203083799984597,
+              0.04218254100123886
+            ],
+            "tracemalloc_peak_median_mb": 0.494232177734375,
+            "rss_max_mb": 134.12109375,
+            "http_total_median": 10,
+            "last": {
+              "skipped": [],
+              "count": 5,
+              "requests": {
+                "list": 1,
+                "get": 5,
+                "put": 5
+              },
+              "request_total": 11,
+              "mode": "parallel:16",
+              "seconds": 0.04218254100123886,
+              "http_requests": {
+                "azure:put": 5,
+                "s3:get": 4,
+                "s3:list": 1
+              },
+              "http_total": 10
+            }
+          }
+        }
+      },
+      {
+        "pair": "azure->s3",
+        "modes": {
+          "naive_sequential": {
+            "cold_s": 0.09816158500143501,
+            "warm_median_s": 0.0969917060001535,
+            "median_s": 0.09743600699948729,
+            "samples_s": [
+              0.09816158500143501,
+              0.09743600699948729,
+              0.09654740500081971,
+              0.10344605799946294,
+              0.09527222500037169
+            ],
+            "tracemalloc_peak_median_mb": 0.2675008773803711,
+            "rss_max_mb": 134.12109375,
+            "http_total_median": 18,
+            "last": {
+              "skipped": [],
+              "count": 7,
+              "requests": {
+                "list:azure": 1,
+                "get:azure": 7,
+                "put:s3": 7
+              },
+              "request_total": 15,
+              "pair": "azure->s3",
+              "seconds": 0.09527222500037169,
+              "http_requests": {
+                "azure:get": 10,
+                "azure:list": 1,
+                "s3:put": 7
+              },
+              "http_total": 18
+            }
+          },
+          "generic_sequential_per_key": {
+            "cold_s": 0.13226525199934258,
+            "warm_median_s": 0.12857686600000306,
+            "median_s": 0.12945413299894426,
+            "samples_s": [
+              0.13226525199934258,
+              0.12769959900106187,
+              0.12945413299894426,
+              0.1300871269995696,
+              0.1252633549993334
+            ],
+            "tracemalloc_peak_median_mb": 0.4933347702026367,
+            "rss_max_mb": 134.37109375,
+            "http_total_median": 24,
+            "last": {
+              "skipped": [],
+              "count": 5,
+              "requests": {
+                "list": 1,
+                "get": 5,
+                "put": 5
+              },
+              "request_total": 11,
+              "mode": "sequential",
+              "seconds": 0.1252633549993334,
+              "http_requests": {
+                "azure:get": 4,
+                "azure:head": 13,
+                "azure:list": 2,
+                "s3:put": 5
+              },
+              "http_total": 24
+            }
+          },
+          "generic_sequential": {
+            "cold_s": 0.06235746600032144,
+            "warm_median_s": 0.06255096849963593,
+            "median_s": 0.06235746600032144,
+            "samples_s": [
+              0.06235746600032144,
+              0.06385048500123958,
+              0.060251921000599395,
+              0.062297909000335494,
+              0.06280402799893636
+            ],
+            "tracemalloc_peak_median_mb": 0.4554481506347656,
+            "rss_max_mb": 134.62109375,
+            "http_total_median": 11,
+            "last": {
+              "skipped": [],
+              "count": 5,
+              "requests": {
+                "list": 1,
+                "get": 5,
+                "put": 5
+              },
+              "request_total": 11,
+              "mode": "sequential",
+              "seconds": 0.06280402799893636,
+              "http_requests": {
+                "azure:get": 4,
+                "azure:head": 1,
+                "azure:list": 1,
+                "s3:put": 5
+              },
+              "http_total": 11
+            }
+          },
+          "generic_parallel_4": {
+            "cold_s": 0.04942840299918316,
+            "warm_median_s": 0.04911222550072125,
+            "median_s": 0.04942840299918316,
+            "samples_s": [
+              0.04942840299918316,
+              0.048166464001042186,
+              0.04705170399938652,
+              0.056698942000366515,
+              0.05005798700040032
+            ],
+            "tracemalloc_peak_median_mb": 0.5255413055419922,
+            "rss_max_mb": 135.24609375,
+            "http_total_median": 11,
+            "last": {
+              "skipped": [],
+              "count": 5,
+              "requests": {
+                "list": 1,
+                "get": 5,
+                "put": 5
+              },
+              "request_total": 11,
+              "mode": "parallel:4",
+              "seconds": 0.05005798700040032,
+              "http_requests": {
+                "azure:get": 4,
+                "azure:head": 1,
+                "azure:list": 1,
+                "s3:put": 5
+              },
+              "http_total": 11
+            }
+          },
+          "generic_parallel_8": {
+            "cold_s": 0.05146826799864357,
+            "warm_median_s": 0.048941833999379014,
+            "median_s": 0.049581871999180294,
+            "samples_s": [
+              0.05146826799864357,
+              0.048301795999577735,
+              0.049581871999180294,
+              0.04659847400034778,
+              0.052015949000633555
+            ],
+            "tracemalloc_peak_median_mb": 0.5288457870483398,
+            "rss_max_mb": 135.74609375,
+            "http_total_median": 11,
+            "last": {
+              "skipped": [],
+              "count": 5,
+              "requests": {
+                "list": 1,
+                "get": 5,
+                "put": 5
+              },
+              "request_total": 11,
+              "mode": "parallel:8",
+              "seconds": 0.052015949000633555,
+              "http_requests": {
+                "azure:get": 4,
+                "azure:head": 1,
+                "azure:list": 1,
+                "s3:put": 5
+              },
+              "http_total": 11
+            }
+          },
+          "generic_parallel_16": {
+            "cold_s": 0.04966260099899955,
+            "warm_median_s": 0.050794016000509146,
+            "median_s": 0.04984556000090379,
+            "samples_s": [
+              0.04966260099899955,
+              0.04984556000090379,
+              0.04680714599999192,
+              0.0517424720001145,
+              0.05179596000016318
+            ],
+            "tracemalloc_peak_median_mb": 0.5276145935058594,
+            "rss_max_mb": 135.99609375,
+            "http_total_median": 11,
+            "last": {
+              "skipped": [],
+              "count": 5,
+              "requests": {
+                "list": 1,
+                "get": 5,
+                "put": 5
+              },
+              "request_total": 11,
+              "mode": "parallel:16",
+              "seconds": 0.05179596000016318,
+              "http_requests": {
+                "azure:get": 4,
+                "azure:head": 1,
+                "azure:list": 1,
+                "s3:put": 5
+              },
+              "http_total": 11
+            }
+          }
+        }
+      },
+      {
+        "pair": "gcs->azure",
+        "modes": {
+          "naive_sequential": {
+            "cold_s": 0.06372884000120393,
+            "warm_median_s": 0.06850017899978411,
+            "median_s": 0.06702566499916429,
+            "samples_s": [
+              0.06372884000120393,
+              0.06344685000112804,
+              0.06702566499916429,
+              0.10110577299928991,
+              0.06997469300040393
+            ],
+            "tracemalloc_peak_median_mb": 0.2181386947631836,
+            "rss_max_mb": 136.37109375,
+            "http_total_median": 16,
+            "last": {
+              "skipped": [],
+              "count": 7,
+              "requests": {
+                "list:gcs": 1,
+                "get:gcs": 7,
+                "put:azure": 7
+              },
+              "request_total": 15,
+              "pair": "gcs->azure",
+              "seconds": 0.06997469300040393,
+              "http_requests": {
+                "azure:put": 7,
+                "gcs:get": 7,
+                "gcs:list": 1,
+                "gcs:metadata": 1
+              },
+              "http_total": 16
+            }
+          },
+          "generic_sequential_per_key": {
+            "cold_s": 0.06627888200091547,
+            "warm_median_s": 0.06689981450017513,
+            "median_s": 0.06627888200091547,
+            "samples_s": [
+              0.06627888200091547,
+              0.06277241600037087,
+              0.07151691299986851,
+              0.06805495499975223,
+              0.06574467400059802
+            ],
+            "tracemalloc_peak_median_mb": 0.36542701721191406,
+            "rss_max_mb": 136.49609375,
+            "http_total_median": 36,
+            "last": {
+              "skipped": [],
+              "count": 5,
+              "requests": {
+                "list": 1,
+                "get": 5,
+                "put": 5
+              },
+              "request_total": 11,
+              "mode": "sequential",
+              "seconds": 0.06574467400059802,
+              "http_requests": {
+                "azure:put": 5,
+                "gcs:get": 4,
+                "gcs:list": 15,
+                "gcs:metadata": 12
+              },
+              "http_total": 36
+            }
+          },
+          "generic_sequential": {
+            "cold_s": 0.036935334999725455,
+            "warm_median_s": 0.03846840299956966,
+            "median_s": 0.037622677999024745,
+            "samples_s": [
+              0.036935334999725455,
+              0.03616731500005699,
+              0.03931412800011458,
+              0.04512508900006651,
+              0.037622677999024745
+            ],
+            "tracemalloc_peak_median_mb": 0.31449031829833984,
+            "rss_max_mb": 136.49609375,
+            "http_total_median": 10,
+            "last": {
+              "skipped": [],
+              "count": 5,
+              "requests": {
+                "list": 1,
+                "get": 5,
+                "put": 5
+              },
+              "request_total": 11,
+              "mode": "sequential",
+              "seconds": 0.037622677999024745,
+              "http_requests": {
+                "azure:put": 5,
+                "gcs:get": 4,
+                "gcs:list": 1
+              },
+              "http_total": 10
+            }
+          },
+          "generic_parallel_4": {
+            "cold_s": 0.03130173399949854,
+            "warm_median_s": 0.029193778000262682,
+            "median_s": 0.03007431900005031,
+            "samples_s": [
+              0.03130173399949854,
+              0.02710900700003549,
+              0.028313237000475056,
+              0.03007431900005031,
+              0.03083906299980299
+            ],
+            "tracemalloc_peak_median_mb": 0.4245033264160156,
+            "rss_max_mb": 136.74609375,
+            "http_total_median": 10,
+            "last": {
+              "skipped": [],
+              "count": 5,
+              "requests": {
+                "list": 1,
+                "get": 5,
+                "put": 5
+              },
+              "request_total": 11,
+              "mode": "parallel:4",
+              "seconds": 0.03083906299980299,
+              "http_requests": {
+                "azure:put": 5,
+                "gcs:get": 4,
+                "gcs:list": 1
+              },
+              "http_total": 10
+            }
+          },
+          "generic_parallel_8": {
+            "cold_s": 0.02824132200112217,
+            "warm_median_s": 0.02913230800004385,
+            "median_s": 0.02857034000044223,
+            "samples_s": [
+              0.02824132200112217,
+              0.031646511000872124,
+              0.02969427599964547,
+              0.027673767999658594,
+              0.02857034000044223
+            ],
+            "tracemalloc_peak_median_mb": 0.45476436614990234,
+            "rss_max_mb": 136.74609375,
+            "http_total_median": 10,
+            "last": {
+              "skipped": [],
+              "count": 5,
+              "requests": {
+                "list": 1,
+                "get": 5,
+                "put": 5
+              },
+              "request_total": 11,
+              "mode": "parallel:8",
+              "seconds": 0.02857034000044223,
+              "http_requests": {
+                "azure:put": 5,
+                "gcs:get": 4,
+                "gcs:list": 1
+              },
+              "http_total": 10
+            }
+          },
+          "generic_parallel_16": {
+            "cold_s": 0.03610502299852669,
+            "warm_median_s": 0.02853953449994151,
+            "median_s": 0.02855685699978494,
+            "samples_s": [
+              0.03610502299852669,
+              0.0272340110004734,
+              0.02852221200009808,
+              0.02855685699978494,
+              0.029001352999330265
+            ],
+            "tracemalloc_peak_median_mb": 0.47246551513671875,
+            "rss_max_mb": 136.87109375,
+            "http_total_median": 10,
+            "last": {
+              "skipped": [],
+              "count": 5,
+              "requests": {
+                "list": 1,
+                "get": 5,
+                "put": 5
+              },
+              "request_total": 11,
+              "mode": "parallel:16",
+              "seconds": 0.029001352999330265,
+              "http_requests": {
+                "azure:put": 5,
+                "gcs:get": 4,
+                "gcs:list": 1
+              },
+              "http_total": 10
+            }
+          }
+        }
+      },
+      {
+        "pair": "azure->gcs",
+        "modes": {
+          "naive_sequential": {
+            "cold_s": 0.09253118299966445,
+            "warm_median_s": 0.07627728700026637,
+            "median_s": 0.0771215740005573,
+            "samples_s": [
+              0.09253118299966445,
+              0.07789988600052311,
+              0.07288822999908007,
+              0.0771215740005573,
+              0.07543299999997544
+            ],
+            "tracemalloc_peak_median_mb": 0.28359031677246094,
+            "rss_max_mb": 136.87109375,
+            "http_total_median": 18,
+            "last": {
+              "skipped": [],
+              "count": 7,
+              "requests": {
+                "list:azure": 1,
+                "get:azure": 7,
+                "put:gcs": 7
+              },
+              "request_total": 15,
+              "pair": "azure->gcs",
+              "seconds": 0.07543299999997544,
+              "http_requests": {
+                "azure:get": 10,
+                "azure:list": 1,
+                "gcs:put": 7
+              },
+              "http_total": 18
+            }
+          },
+          "generic_sequential_per_key": {
+            "cold_s": 0.12016481300088344,
+            "warm_median_s": 0.11365513450073195,
+            "median_s": 0.11368537000089418,
+            "samples_s": [
+              0.12016481300088344,
+              0.12013517400009732,
+              0.11368537000089418,
+              0.11362489900056971,
+              0.1096832990006078
+            ],
+            "tracemalloc_peak_median_mb": 0.4935874938964844,
+            "rss_max_mb": 136.99609375,
+            "http_total_median": 24,
+            "last": {
+              "skipped": [],
+              "count": 5,
+              "requests": {
+                "list": 1,
+                "get": 5,
+                "put": 5
+              },
+              "request_total": 11,
+              "mode": "sequential",
+              "seconds": 0.1096832990006078,
+              "http_requests": {
+                "azure:get": 4,
+                "azure:head": 13,
+                "azure:list": 2,
+                "gcs:put": 5
+              },
+              "http_total": 24
+            }
+          },
+          "generic_sequential": {
+            "cold_s": 0.04757124100069632,
+            "warm_median_s": 0.04876947699995071,
+            "median_s": 0.04783486999986053,
+            "samples_s": [
+              0.04757124100069632,
+              0.04970408400004089,
+              0.04765512100129854,
+              0.05089128500003426,
+              0.04783486999986053
+            ],
+            "tracemalloc_peak_median_mb": 0.46693897247314453,
+            "rss_max_mb": 136.99609375,
+            "http_total_median": 11,
+            "last": {
+              "skipped": [],
+              "count": 5,
+              "requests": {
+                "list": 1,
+                "get": 5,
+                "put": 5
+              },
+              "request_total": 11,
+              "mode": "sequential",
+              "seconds": 0.04783486999986053,
+              "http_requests": {
+                "azure:get": 4,
+                "azure:head": 1,
+                "azure:list": 1,
+                "gcs:put": 5
+              },
+              "http_total": 11
+            }
+          },
+          "generic_parallel_4": {
+            "cold_s": 0.043193708999751834,
+            "warm_median_s": 0.04445092100013426,
+            "median_s": 0.04379769200022565,
+            "samples_s": [
+              0.043193708999751834,
+              0.04206165000141482,
+              0.05078230999970401,
+              0.04379769200022565,
+              0.045104150000042864
+            ],
+            "tracemalloc_peak_median_mb": 0.5276355743408203,
+            "rss_max_mb": 136.99609375,
+            "http_total_median": 11,
+            "last": {
+              "skipped": [],
+              "count": 5,
+              "requests": {
+                "list": 1,
+                "get": 5,
+                "put": 5
+              },
+              "request_total": 11,
+              "mode": "parallel:4",
+              "seconds": 0.045104150000042864,
+              "http_requests": {
+                "azure:get": 4,
+                "azure:head": 1,
+                "azure:list": 1,
+                "gcs:put": 5
+              },
+              "http_total": 11
+            }
+          },
+          "generic_parallel_8": {
+            "cold_s": 0.04572903099870018,
+            "warm_median_s": 0.043050561499512696,
+            "median_s": 0.043232351999904495,
+            "samples_s": [
+              0.04572903099870018,
+              0.04880451200006064,
+              0.040642989000843954,
+              0.043232351999904495,
+              0.0428687709991209
+            ],
+            "tracemalloc_peak_median_mb": 0.5796842575073242,
+            "rss_max_mb": 136.99609375,
+            "http_total_median": 11,
+            "last": {
+              "skipped": [],
+              "count": 5,
+              "requests": {
+                "list": 1,
+                "get": 5,
+                "put": 5
+              },
+              "request_total": 11,
+              "mode": "parallel:8",
+              "seconds": 0.0428687709991209,
+              "http_requests": {
+                "azure:get": 4,
+                "azure:head": 1,
+                "azure:list": 1,
+                "gcs:put": 5
+              },
+              "http_total": 11
+            }
+          },
+          "generic_parallel_16": {
+            "cold_s": 0.04645673900085967,
+            "warm_median_s": 0.04249334599990107,
+            "median_s": 0.043081235999125056,
+            "samples_s": [
+              0.04645673900085967,
+              0.04137095400074031,
+              0.04190545600067708,
+              0.0433865720005997,
+              0.043081235999125056
+            ],
+            "tracemalloc_peak_median_mb": 0.5828647613525391,
+            "rss_max_mb": 136.99609375,
+            "http_total_median": 11,
+            "last": {
+              "skipped": [],
+              "count": 5,
+              "requests": {
+                "list": 1,
+                "get": 5,
+                "put": 5
+              },
+              "request_total": 11,
+              "mode": "parallel:16",
+              "seconds": 0.043081235999125056,
+              "http_requests": {
+                "azure:get": 4,
+                "azure:head": 1,
+                "azure:list": 1,
+                "gcs:put": 5
+              },
+              "http_total": 11
+            }
+          }
+        }
+      }
+    ],
+    "small_objects": [
+      {
+        "pair": "s3->gcs",
+        "modes": {
+          "naive_sequential": {
+            "cold_s": 8.36136898299992,
+            "warm_median_s": 8.373722371499753,
+            "median_s": 8.36136898299992,
+            "samples_s": [
+              8.36136898299992,
+              8.416239770000175,
+              8.33120497299933,
+              8.32968745799917,
+              8.6382588510005
+            ],
+            "tracemalloc_peak_median_mb": 2.5833988189697266,
+            "rss_max_mb": 142.62109375,
+            "http_total_median": 2024,
+            "last": {
+              "skipped": [],
+              "count": 1011,
+              "requests": {
+                "list:s3": 1,
+                "get:s3": 1011,
+                "put:gcs": 1011
+              },
+              "request_total": 2023,
+              "pair": "s3->gcs",
+              "seconds": 8.6382588510005,
+              "http_requests": {
+                "gcs:put": 1011,
+                "s3:get": 1011,
+                "s3:list": 2
+              },
+              "http_total": 2024
+            }
+          },
+          "generic_sequential_per_key": {
+            "cold_s": 20.862731905001056,
+            "warm_median_s": 18.888348672499887,
+            "median_s": 19.464249131000543,
+            "samples_s": [
+              20.862731905001056,
+              19.464249131000543,
+              19.630231536999418,
+              18.268682413001443,
+              18.312448213999232
+            ],
+            "tracemalloc_peak_median_mb": 2.2596216201782227,
+            "rss_max_mb": 144.98828125,
+            "http_total_median": 4024,
+            "last": {
+              "skipped": [],
+              "count": 1000,
+              "requests": {
+                "list": 1,
+                "get": 1000,
+                "put": 1000
+              },
+              "request_total": 2001,
+              "mode": "sequential",
+              "seconds": 18.312448213999232,
+              "http_requests": {
+                "gcs:put": 1000,
+                "s3:get": 1000,
+                "s3:head": 2011,
+                "s3:list": 13
+              },
+              "http_total": 4024
+            }
+          },
+          "generic_sequential": {
+            "cold_s": 8.772083661000579,
+            "warm_median_s": 8.757191143499767,
+            "median_s": 8.772083661000579,
+            "samples_s": [
+              8.772083661000579,
+              8.826862910998898,
+              8.923107570000866,
+              8.635153020000871,
+              8.687519376000637
+            ],
+            "tracemalloc_peak_median_mb": 2.257162094116211,
+            "rss_max_mb": 144.98828125,
+            "http_total_median": 2002,
+            "last": {
+              "skipped": [],
+              "count": 1000,
+              "requests": {
+                "list": 1,
+                "get": 1000,
+                "put": 1000
+              },
+              "request_total": 2001,
+              "mode": "sequential",
+              "seconds": 8.687519376000637,
+              "http_requests": {
+                "gcs:put": 1000,
+                "s3:get": 1000,
+                "s3:list": 2
+              },
+              "http_total": 2002
+            }
+          },
+          "generic_parallel_4": {
+            "cold_s": 6.334764944998824,
+            "warm_median_s": 6.307369205500436,
+            "median_s": 6.31931494499986,
+            "samples_s": [
+              6.334764944998824,
+              6.2954234660010115,
+              6.200126625999474,
+              6.463360652000119,
+              6.31931494499986
+            ],
+            "tracemalloc_peak_median_mb": 2.9424524307250977,
+            "rss_max_mb": 145.73046875,
+            "http_total_median": 2002,
+            "last": {
+              "skipped": [],
+              "count": 1000,
+              "requests": {
+                "list": 1,
+                "get": 1000,
+                "put": 1000
+              },
+              "request_total": 2001,
+              "mode": "parallel:4",
+              "seconds": 6.31931494499986,
+              "http_requests": {
+                "gcs:put": 1000,
+                "s3:get": 1000,
+                "s3:list": 2
+              },
+              "http_total": 2002
+            }
+          },
+          "generic_parallel_8": {
+            "cold_s": 6.477679655001339,
+            "warm_median_s": 6.146835552000084,
+            "median_s": 6.1642453059994295,
+            "samples_s": [
+              6.477679655001339,
+              6.1642453059994295,
+              6.129425798000739,
+              6.108360079999329,
+              6.31106279100095
+            ],
+            "tracemalloc_peak_median_mb": 3.1770668029785156,
+            "rss_max_mb": 147.10546875,
+            "http_total_median": 2002,
+            "last": {
+              "skipped": [],
+              "count": 1000,
+              "requests": {
+                "list": 1,
+                "get": 1000,
+                "put": 1000
+              },
+              "request_total": 2001,
+              "mode": "parallel:8",
+              "seconds": 6.31106279100095,
+              "http_requests": {
+                "gcs:put": 1000,
+                "s3:get": 1000,
+                "s3:list": 2
+              },
+              "http_total": 2002
+            }
+          },
+          "generic_parallel_16": {
+            "cold_s": 6.381197279000844,
+            "warm_median_s": 6.32164510200073,
+            "median_s": 6.381197279000844,
+            "samples_s": [
+              6.381197279000844,
+              6.413808014000097,
+              6.390259994001099,
+              6.253030210000361,
+              6.172109340001043
+            ],
+            "tracemalloc_peak_median_mb": 3.369309425354004,
+            "rss_max_mb": 148.23046875,
+            "http_total_median": 2002,
+            "last": {
+              "skipped": [],
+              "count": 1000,
+              "requests": {
+                "list": 1,
+                "get": 1000,
+                "put": 1000
+              },
+              "request_total": 2001,
+              "mode": "parallel:16",
+              "seconds": 6.172109340001043,
+              "http_requests": {
+                "gcs:put": 1000,
+                "s3:get": 1000,
+                "s3:list": 2
+              },
+              "http_total": 2002
+            }
+          }
+        }
+      },
+      {
+        "pair": "gcs->s3",
+        "modes": {
+          "naive_sequential": {
+            "cold_s": 8.485577605000799,
+            "warm_median_s": 8.705184264998934,
+            "median_s": 8.700906518999545,
+            "samples_s": [
+              8.485577605000799,
+              8.95178949000001,
+              8.700906518999545,
+              8.709462010998323,
+              8.451647437999782
+            ],
+            "tracemalloc_peak_median_mb": 4.182782173156738,
+            "rss_max_mb": 148.98046875,
+            "http_total_median": 2024,
+            "last": {
+              "skipped": [],
+              "count": 1011,
+              "requests": {
+                "list:gcs": 1,
+                "get:gcs": 1011,
+                "put:s3": 1011
+              },
+              "request_total": 2023,
+              "pair": "gcs->s3",
+              "seconds": 8.451647437999782,
+              "http_requests": {
+                "gcs:get": 1011,
+                "gcs:list": 1,
+                "gcs:metadata": 1,
+                "s3:put": 1011
+              },
+              "http_total": 2024
+            }
+          },
+          "generic_sequential_per_key": {
+            "cold_s": 11.899088613999993,
+            "warm_median_s": 12.050068418499905,
+            "median_s": 11.952807314999518,
+            "samples_s": [
+              11.899088613999993,
+              11.788852990999658,
+              11.952807314999518,
+              12.147329522000291,
+              12.593449176998547
+            ],
+            "tracemalloc_peak_median_mb": 4.114847183227539,
+            "rss_max_mb": 150.85546875,
+            "http_total_median": 6050,
+            "last": {
+              "skipped": [],
+              "count": 1000,
+              "requests": {
+                "list": 1,
+                "get": 1000,
+                "put": 1000
+              },
+              "request_total": 2001,
+              "mode": "sequential",
+              "seconds": 12.593449176998547,
+              "http_requests": {
+                "gcs:get": 1000,
+                "gcs:list": 2013,
+                "gcs:metadata": 2040,
+                "s3:put": 1000
+              },
+              "http_total": 6053
+            }
+          },
+          "generic_sequential": {
+            "cold_s": 7.2552488050005195,
+            "warm_median_s": 7.353827711499434,
+            "median_s": 7.2552488050005195,
+            "samples_s": [
+              7.2552488050005195,
+              7.1863875039998675,
+              7.457572752999113,
+              7.250082669999756,
+              7.636906136000107
+            ],
+            "tracemalloc_peak_median_mb": 4.11588191986084,
+            "rss_max_mb": 150.85546875,
+            "http_total_median": 2002,
+            "last": {
+              "skipped": [],
+              "count": 1000,
+              "requests": {
+                "list": 1,
+                "get": 1000,
+                "put": 1000
+              },
+              "request_total": 2001,
+              "mode": "sequential",
+              "seconds": 7.636906136000107,
+              "http_requests": {
+                "gcs:get": 1000,
+                "gcs:list": 2,
+                "s3:put": 1000
+              },
+              "http_total": 2002
+            }
+          },
+          "generic_parallel_4": {
+            "cold_s": 5.026907254999969,
+            "warm_median_s": 4.9295272939989445,
+            "median_s": 4.939923545998681,
+            "samples_s": [
+              5.026907254999969,
+              5.049197525999261,
+              4.939923545998681,
+              4.735004652999123,
+              4.919131041999208
+            ],
+            "tracemalloc_peak_median_mb": 4.115166664123535,
+            "rss_max_mb": 150.85546875,
+            "http_total_median": 2002,
+            "last": {
+              "skipped": [],
+              "count": 1000,
+              "requests": {
+                "list": 1,
+                "get": 1000,
+                "put": 1000
+              },
+              "request_total": 2001,
+              "mode": "parallel:4",
+              "seconds": 4.919131041999208,
+              "http_requests": {
+                "gcs:get": 1000,
+                "gcs:list": 2,
+                "s3:put": 1000
+              },
+              "http_total": 2002
+            }
+          },
+          "generic_parallel_8": {
+            "cold_s": 4.568426846000875,
+            "warm_median_s": 6.450061202000143,
+            "median_s": 4.676667260999238,
+            "samples_s": [
+              4.568426846000875,
+              4.6732015409997985,
+              8.223455143001047,
+              4.676667260999238,
+              14.509925661001034
+            ],
+            "tracemalloc_peak_median_mb": 4.115166664123535,
+            "rss_max_mb": 150.85546875,
+            "http_total_median": 2002,
+            "last": {
+              "skipped": [],
+              "count": 1000,
+              "requests": {
+                "list": 1,
+                "get": 1000,
+                "put": 1000
+              },
+              "request_total": 2001,
+              "mode": "parallel:8",
+              "seconds": 14.509925661001034,
+              "http_requests": {
+                "gcs:get": 1000,
+                "gcs:list": 2,
+                "s3:put": 1000
+              },
+              "http_total": 2002
+            }
+          },
+          "generic_parallel_16": {
+            "cold_s": 7.277290981000988,
+            "warm_median_s": 5.133328732999871,
+            "median_s": 5.14532509899982,
+            "samples_s": [
+              7.277290981000988,
+              5.427854373001537,
+              5.14532509899982,
+              5.121332366999923,
+              5.012169471001471
+            ],
+            "tracemalloc_peak_median_mb": 4.115168571472168,
+            "rss_max_mb": 150.85546875,
+            "http_total_median": 2002,
+            "last": {
+              "skipped": [],
+              "count": 1000,
+              "requests": {
+                "list": 1,
+                "get": 1000,
+                "put": 1000
+              },
+              "request_total": 2001,
+              "mode": "parallel:16",
+              "seconds": 5.012169471001471,
+              "http_requests": {
+                "gcs:get": 1000,
+                "gcs:list": 2,
+                "s3:put": 1000
+              },
+              "http_total": 2002
+            }
+          }
+        }
+      },
+      {
+        "pair": "s3->azure",
+        "modes": {
+          "naive_sequential": {
+            "cold_s": 13.692946053000924,
+            "warm_median_s": 13.199940925500414,
+            "median_s": 13.692946053000924,
+            "samples_s": [
+              13.692946053000924,
+              13.901940084999296,
+              14.219969211999341,
+              12.092538576000152,
+              12.497941766001532
+            ],
+            "tracemalloc_peak_median_mb": 2.5781993865966797,
+            "rss_max_mb": 153.60546875,
+            "http_total_median": 2024,
+            "last": {
+              "skipped": [],
+              "count": 1011,
+              "requests": {
+                "list:s3": 1,
+                "get:s3": 1011,
+                "put:azure": 1011
+              },
+              "request_total": 2023,
+              "pair": "s3->azure",
+              "seconds": 12.497941766001532,
+              "http_requests": {
+                "azure:put": 1011,
+                "s3:get": 1011,
+                "s3:list": 2
+              },
+              "http_total": 2024
+            }
+          },
+          "generic_sequential_per_key": {
+            "cold_s": 22.88895843299906,
+            "warm_median_s": 22.320995313500134,
+            "median_s": 22.497576151999965,
+            "samples_s": [
+              22.88895843299906,
+              22.497576151999965,
+              22.518537885000114,
+              22.144414475000303,
+              22.108756338000603
+            ],
+            "tracemalloc_peak_median_mb": 2.2577333450317383,
+            "rss_max_mb": 153.96484375,
+            "http_total_median": 4024,
+            "last": {
+              "skipped": [],
+              "count": 1000,
+              "requests": {
+                "list": 1,
+                "get": 1000,
+                "put": 1000
+              },
+              "request_total": 2001,
+              "mode": "sequential",
+              "seconds": 22.108756338000603,
+              "http_requests": {
+                "azure:put": 1000,
+                "s3:get": 1000,
+                "s3:head": 2011,
+                "s3:list": 13
+              },
+              "http_total": 4024
+            }
+          },
+          "generic_sequential": {
+            "cold_s": 12.408252487999562,
+            "warm_median_s": 13.52983635000055,
+            "median_s": 13.311098464000679,
+            "samples_s": [
+              12.408252487999562,
+              12.306955709000249,
+              14.163934987000175,
+              13.748574236000422,
+              13.311098464000679
+            ],
+            "tracemalloc_peak_median_mb": 2.259955406188965,
+            "rss_max_mb": 153.96484375,
+            "http_total_median": 2002,
+            "last": {
+              "skipped": [],
+              "count": 1000,
+              "requests": {
+                "list": 1,
+                "get": 1000,
+                "put": 1000
+              },
+              "request_total": 2001,
+              "mode": "sequential",
+              "seconds": 13.311098464000679,
+              "http_requests": {
+                "azure:put": 1000,
+                "s3:get": 1000,
+                "s3:list": 2
+              },
+              "http_total": 2002
+            }
+          },
+          "generic_parallel_4": {
+            "cold_s": 9.321441829999458,
+            "warm_median_s": 8.796482100500725,
+            "median_s": 8.939799407000464,
+            "samples_s": [
+              9.321441829999458,
+              9.347522508000111,
+              8.939799407000464,
+              8.601482113999737,
+              8.653164794000986
+            ],
+            "tracemalloc_peak_median_mb": 3.572237014770508,
+            "rss_max_mb": 155.78125,
+            "http_total_median": 2002,
+            "last": {
+              "skipped": [],
+              "count": 1000,
+              "requests": {
+                "list": 1,
+                "get": 1000,
+                "put": 1000
+              },
+              "request_total": 2001,
+              "mode": "parallel:4",
+              "seconds": 8.653164794000986,
+              "http_requests": {
+                "azure:put": 1000,
+                "s3:get": 1000,
+                "s3:list": 2
+              },
+              "http_total": 2002
+            }
+          },
+          "generic_parallel_8": {
+            "cold_s": 8.486610744001155,
+            "warm_median_s": 8.289064646500265,
+            "median_s": 8.457359439000356,
+            "samples_s": [
+              8.486610744001155,
+              8.120769854000173,
+              9.001197846999275,
+              8.457359439000356,
+              8.049987600999884
+            ],
+            "tracemalloc_peak_median_mb": 3.8652544021606445,
+            "rss_max_mb": 159.390625,
+            "http_total_median": 2002,
+            "last": {
+              "skipped": [],
+              "count": 1000,
+              "requests": {
+                "list": 1,
+                "get": 1000,
+                "put": 1000
+              },
+              "request_total": 2001,
+              "mode": "parallel:8",
+              "seconds": 8.049987600999884,
+              "http_requests": {
+                "azure:put": 1000,
+                "s3:get": 1000,
+                "s3:list": 2
+              },
+              "http_total": 2002
+            }
+          },
+          "generic_parallel_16": {
+            "cold_s": 8.412344305999795,
+            "warm_median_s": 8.236283109999931,
+            "median_s": 8.268122932000551,
+            "samples_s": [
+              8.412344305999795,
+              8.268122932000551,
+              8.204443287999311,
+              8.342537793001611,
+              8.016600543000095
+            ],
+            "tracemalloc_peak_median_mb": 4.357556343078613,
+            "rss_max_mb": 162.50390625,
+            "http_total_median": 2002,
+            "last": {
+              "skipped": [],
+              "count": 1000,
+              "requests": {
+                "list": 1,
+                "get": 1000,
+                "put": 1000
+              },
+              "request_total": 2001,
+              "mode": "parallel:16",
+              "seconds": 8.016600543000095,
+              "http_requests": {
+                "azure:put": 1000,
+                "s3:get": 1000,
+                "s3:list": 2
+              },
+              "http_total": 2002
+            }
+          }
+        }
+      },
+      {
+        "pair": "azure->s3",
+        "modes": {
+          "naive_sequential": {
+            "cold_s": 12.355059457000607,
+            "warm_median_s": 13.119398085499597,
+            "median_s": 12.871627126000021,
+            "samples_s": [
+              12.355059457000607,
+              12.70959812000001,
+              13.367169044999173,
+              13.470038831999773,
+              12.871627126000021
+            ],
+            "tracemalloc_peak_median_mb": 8.581284523010254,
+            "rss_max_mb": 169.20703125,
+            "http_total_median": 2034,
+            "last": {
+              "skipped": [],
+              "count": 1011,
+              "requests": {
+                "list:azure": 1,
+                "get:azure": 1011,
+                "put:s3": 1011
+              },
+              "request_total": 2023,
+              "pair": "azure->s3",
+              "seconds": 12.871627126000021,
+              "http_requests": {
+                "azure:get": 1022,
+                "azure:list": 1,
+                "s3:put": 1011
+              },
+              "http_total": 2034
+            }
+          },
+          "generic_sequential_per_key": {
+            "cold_s": 24.530049998000322,
+            "warm_median_s": 23.449488202500106,
+            "median_s": 23.55451849200108,
+            "samples_s": [
+              24.530049998000322,
+              23.875352315999407,
+              23.344457912999133,
+              22.884598480999557,
+              23.55451849200108
+            ],
+            "tracemalloc_peak_median_mb": 7.899855613708496,
+            "rss_max_mb": 177.33203125,
+            "http_total_median": 4022,
+            "last": {
+              "skipped": [],
+              "count": 1000,
+              "requests": {
+                "list": 1,
+                "get": 1000,
+                "put": 1000
+              },
+              "request_total": 2001,
+              "mode": "sequential",
+              "seconds": 23.55451849200108,
+              "http_requests": {
+                "azure:get": 1000,
+                "azure:head": 2011,
+                "azure:list": 11,
+                "s3:put": 1000
+              },
+              "http_total": 4022
+            }
+          },
+          "generic_sequential": {
+            "cold_s": 12.645917137999277,
+            "warm_median_s": 12.313518419499815,
+            "median_s": 12.456296270000166,
+            "samples_s": [
+              12.645917137999277,
+              11.999705611999161,
+              12.170740568999463,
+              12.456296270000166,
+              12.667654443001084
+            ],
+            "tracemalloc_peak_median_mb": 7.900781631469727,
+            "rss_max_mb": 184.83203125,
+            "http_total_median": 2002,
+            "last": {
+              "skipped": [],
+              "count": 1000,
+              "requests": {
+                "list": 1,
+                "get": 1000,
+                "put": 1000
+              },
+              "request_total": 2001,
+              "mode": "sequential",
+              "seconds": 12.667654443001084,
+              "http_requests": {
+                "azure:get": 1000,
+                "azure:head": 1,
+                "azure:list": 1,
+                "s3:put": 1000
+              },
+              "http_total": 2002
+            }
+          },
+          "generic_parallel_4": {
+            "cold_s": 8.750984577000054,
+            "warm_median_s": 9.4613168424994,
+            "median_s": 9.46123608599919,
+            "samples_s": [
+              8.750984577000054,
+              8.850471942001604,
+              9.46123608599919,
+              10.150412396998945,
+              9.46139759899961
+            ],
+            "tracemalloc_peak_median_mb": 7.924619674682617,
+            "rss_max_mb": 184.95703125,
+            "http_total_median": 2002,
+            "last": {
+              "skipped": [],
+              "count": 1000,
+              "requests": {
+                "list": 1,
+                "get": 1000,
+                "put": 1000
+              },
+              "request_total": 2001,
+              "mode": "parallel:4",
+              "seconds": 9.46139759899961,
+              "http_requests": {
+                "azure:get": 1000,
+                "azure:head": 1,
+                "azure:list": 1,
+                "s3:put": 1000
+              },
+              "http_total": 2002
+            }
+          },
+          "generic_parallel_8": {
+            "cold_s": 8.849821850000808,
+            "warm_median_s": 9.22160697649906,
+            "median_s": 9.131814664999183,
+            "samples_s": [
+              8.849821850000808,
+              10.394018229999347,
+              9.311399287998938,
+              9.131814664999183,
+              9.010194932001468
+            ],
+            "tracemalloc_peak_median_mb": 8.198943138122559,
+            "rss_max_mb": 186.58203125,
+            "http_total_median": 2002,
+            "last": {
+              "skipped": [],
+              "count": 1000,
+              "requests": {
+                "list": 1,
+                "get": 1000,
+                "put": 1000
+              },
+              "request_total": 2001,
+              "mode": "parallel:8",
+              "seconds": 9.010194932001468,
+              "http_requests": {
+                "azure:get": 1000,
+                "azure:head": 1,
+                "azure:list": 1,
+                "s3:put": 1000
+              },
+              "http_total": 2002
+            }
+          },
+          "generic_parallel_16": {
+            "cold_s": 9.125014005001503,
+            "warm_median_s": 8.586170112000218,
+            "median_s": 8.612081932000365,
+            "samples_s": [
+              9.125014005001503,
+              8.560258292000071,
+              8.613162665000345,
+              8.48948410400044,
+              8.612081932000365
+            ],
+            "tracemalloc_peak_median_mb": 8.746597290039062,
+            "rss_max_mb": 188.70703125,
+            "http_total_median": 2002,
+            "last": {
+              "skipped": [],
+              "count": 1000,
+              "requests": {
+                "list": 1,
+                "get": 1000,
+                "put": 1000
+              },
+              "request_total": 2001,
+              "mode": "parallel:16",
+              "seconds": 8.612081932000365,
+              "http_requests": {
+                "azure:get": 1000,
+                "azure:head": 1,
+                "azure:list": 1,
+                "s3:put": 1000
+              },
+              "http_total": 2002
+            }
+          }
+        }
+      },
+      {
+        "pair": "gcs->azure",
+        "modes": {
+          "naive_sequential": {
+            "cold_s": 9.963256850998732,
+            "warm_median_s": 10.1488512119995,
+            "median_s": 10.063249966999138,
+            "samples_s": [
+              9.963256850998732,
+              10.339372653999817,
+              9.780801857999904,
+              10.234452456999861,
+              10.063249966999138
+            ],
+            "tracemalloc_peak_median_mb": 4.226266860961914,
+            "rss_max_mb": 188.953125,
+            "http_total_median": 2024,
+            "last": {
+              "skipped": [],
+              "count": 1011,
+              "requests": {
+                "list:gcs": 1,
+                "get:gcs": 1011,
+                "put:azure": 1011
+              },
+              "request_total": 2023,
+              "pair": "gcs->azure",
+              "seconds": 10.063249966999138,
+              "http_requests": {
+                "azure:put": 1011,
+                "gcs:get": 1011,
+                "gcs:list": 1,
+                "gcs:metadata": 1
+              },
+              "http_total": 2024
+            }
+          },
+          "generic_sequential_per_key": {
+            "cold_s": 13.416845022000416,
+            "warm_median_s": 14.427995195499534,
+            "median_s": 14.37015691399938,
+            "samples_s": [
+              13.416845022000416,
+              14.37015691399938,
+              14.485833476999687,
+              13.404345191000175,
+              15.231830193999485
+            ],
+            "tracemalloc_peak_median_mb": 4.158271789550781,
+            "rss_max_mb": 188.953125,
+            "http_total_median": 6055,
+            "last": {
+              "skipped": [],
+              "count": 1000,
+              "requests": {
+                "list": 1,
+                "get": 1000,
+                "put": 1000
+              },
+              "request_total": 2001,
+              "mode": "sequential",
+              "seconds": 15.231830193999485,
+              "http_requests": {
+                "azure:put": 1000,
+                "gcs:get": 1000,
+                "gcs:list": 2013,
+                "gcs:metadata": 2047
+              },
+              "http_total": 6060
+            }
+          },
+          "generic_sequential": {
+            "cold_s": 9.30192822599929,
+            "warm_median_s": 8.929585399999269,
+            "median_s": 9.052626601998782,
+            "samples_s": [
+              9.30192822599929,
+              9.263382331000685,
+              9.052626601998782,
+              8.806544197999756,
+              8.374133893999897
+            ],
+            "tracemalloc_peak_median_mb": 4.159084320068359,
+            "rss_max_mb": 189.31640625,
+            "http_total_median": 2002,
+            "last": {
+              "skipped": [],
+              "count": 1000,
+              "requests": {
+                "list": 1,
+                "get": 1000,
+                "put": 1000
+              },
+              "request_total": 2001,
+              "mode": "sequential",
+              "seconds": 8.374133893999897,
+              "http_requests": {
+                "azure:put": 1000,
+                "gcs:get": 1000,
+                "gcs:list": 2
+              },
+              "http_total": 2002
+            }
+          },
+          "generic_parallel_4": {
+            "cold_s": 6.094490584999221,
+            "warm_median_s": 5.604130980500486,
+            "median_s": 5.686670813000092,
+            "samples_s": [
+              6.094490584999221,
+              5.52159114800088,
+              5.686670813000092,
+              5.8918782050004666,
+              5.300080615999832
+            ],
+            "tracemalloc_peak_median_mb": 4.158445358276367,
+            "rss_max_mb": 189.31640625,
+            "http_total_median": 2002,
+            "last": {
+              "skipped": [],
+              "count": 1000,
+              "requests": {
+                "list": 1,
+                "get": 1000,
+                "put": 1000
+              },
+              "request_total": 2001,
+              "mode": "parallel:4",
+              "seconds": 5.300080615999832,
+              "http_requests": {
+                "azure:put": 1000,
+                "gcs:get": 1000,
+                "gcs:list": 2
+              },
+              "http_total": 2002
+            }
+          },
+          "generic_parallel_8": {
+            "cold_s": 5.593124950000856,
+            "warm_median_s": 5.839684827000383,
+            "median_s": 5.799335641000653,
+            "samples_s": [
+              5.593124950000856,
+              5.799335641000653,
+              5.880034013000113,
+              5.881595632999961,
+              5.668097165998915
+            ],
+            "tracemalloc_peak_median_mb": 4.158445358276367,
+            "rss_max_mb": 190.1953125,
+            "http_total_median": 2002,
+            "last": {
+              "skipped": [],
+              "count": 1000,
+              "requests": {
+                "list": 1,
+                "get": 1000,
+                "put": 1000
+              },
+              "request_total": 2001,
+              "mode": "parallel:8",
+              "seconds": 5.668097165998915,
+              "http_requests": {
+                "azure:put": 1000,
+                "gcs:get": 1000,
+                "gcs:list": 2
+              },
+              "http_total": 2002
+            }
+          },
+          "generic_parallel_16": {
+            "cold_s": 5.774174427000617,
+            "warm_median_s": 5.759032831500008,
+            "median_s": 5.769301898999402,
+            "samples_s": [
+              5.774174427000617,
+              5.748763764000614,
+              6.037669270999686,
+              5.622480213000017,
+              5.769301898999402
+            ],
+            "tracemalloc_peak_median_mb": 4.552519798278809,
+            "rss_max_mb": 190.53515625,
+            "http_total_median": 2002,
+            "last": {
+              "skipped": [],
+              "count": 1000,
+              "requests": {
+                "list": 1,
+                "get": 1000,
+                "put": 1000
+              },
+              "request_total": 2001,
+              "mode": "parallel:16",
+              "seconds": 5.769301898999402,
+              "http_requests": {
+                "azure:put": 1000,
+                "gcs:get": 1000,
+                "gcs:list": 2
+              },
+              "http_total": 2002
+            }
+          }
+        }
+      },
+      {
+        "pair": "azure->gcs",
+        "modes": {
+          "naive_sequential": {
+            "cold_s": 10.220190420999643,
+            "warm_median_s": 10.252417688500827,
+            "median_s": 10.220190420999643,
+            "samples_s": [
+              10.220190420999643,
+              9.929953091999778,
+              10.147699103001287,
+              11.27994624600069,
+              10.357136274000368
+            ],
+            "tracemalloc_peak_median_mb": 8.577625274658203,
+            "rss_max_mb": 190.53515625,
+            "http_total_median": 2034,
+            "last": {
+              "skipped": [],
+              "count": 1011,
+              "requests": {
+                "list:azure": 1,
+                "get:azure": 1011,
+                "put:gcs": 1011
+              },
+              "request_total": 2023,
+              "pair": "azure->gcs",
+              "seconds": 10.357136274000368,
+              "http_requests": {
+                "azure:get": 1022,
+                "azure:list": 1,
+                "gcs:put": 1011
+              },
+              "http_total": 2034
+            }
+          },
+          "generic_sequential_per_key": {
+            "cold_s": 21.720458961000986,
+            "warm_median_s": 21.286963474499316,
+            "median_s": 21.419217576998562,
+            "samples_s": [
+              21.720458961000986,
+              21.15470937200007,
+              21.5588110159988,
+              21.419217576998562,
+              21.09703609999997
+            ],
+            "tracemalloc_peak_median_mb": 7.901223182678223,
+            "rss_max_mb": 190.53515625,
+            "http_total_median": 4022,
+            "last": {
+              "skipped": [],
+              "count": 1000,
+              "requests": {
+                "list": 1,
+                "get": 1000,
+                "put": 1000
+              },
+              "request_total": 2001,
+              "mode": "sequential",
+              "seconds": 21.09703609999997,
+              "http_requests": {
+                "azure:get": 1000,
+                "azure:head": 2011,
+                "azure:list": 11,
+                "gcs:put": 1000
+              },
+              "http_total": 4022
+            }
+          },
+          "generic_sequential": {
+            "cold_s": 9.939980802999344,
+            "warm_median_s": 10.581383252500018,
+            "median_s": 10.575910730000032,
+            "samples_s": [
+              9.939980802999344,
+              10.045529692000855,
+              10.575910730000032,
+              10.586855775000004,
+              10.768589590999909
+            ],
+            "tracemalloc_peak_median_mb": 7.899452209472656,
+            "rss_max_mb": 190.53515625,
+            "http_total_median": 2002,
+            "last": {
+              "skipped": [],
+              "count": 1000,
+              "requests": {
+                "list": 1,
+                "get": 1000,
+                "put": 1000
+              },
+              "request_total": 2001,
+              "mode": "sequential",
+              "seconds": 10.768589590999909,
+              "http_requests": {
+                "azure:get": 1000,
+                "azure:head": 1,
+                "azure:list": 1,
+                "gcs:put": 1000
+              },
+              "http_total": 2002
+            }
+          },
+          "generic_parallel_4": {
+            "cold_s": 8.313639386000432,
+            "warm_median_s": 8.501836924999225,
+            "median_s": 8.45178347699948,
+            "samples_s": [
+              8.313639386000432,
+              8.551890372998969,
+              8.034806670999387,
+              9.006905692000146,
+              8.45178347699948
+            ],
+            "tracemalloc_peak_median_mb": 8.09582805633545,
+            "rss_max_mb": 190.53515625,
+            "http_total_median": 2002,
+            "last": {
+              "skipped": [],
+              "count": 1000,
+              "requests": {
+                "list": 1,
+                "get": 1000,
+                "put": 1000
+              },
+              "request_total": 2001,
+              "mode": "parallel:4",
+              "seconds": 8.45178347699948,
+              "http_requests": {
+                "azure:get": 1000,
+                "azure:head": 1,
+                "azure:list": 1,
+                "gcs:put": 1000
+              },
+              "http_total": 2002
+            }
+          },
+          "generic_parallel_8": {
+            "cold_s": 8.304075502999694,
+            "warm_median_s": 7.670009861000835,
+            "median_s": 7.8123746260007465,
+            "samples_s": [
+              8.304075502999694,
+              7.8123746260007465,
+              8.165101978998791,
+              7.527645096000924,
+              7.289484573999289
+            ],
+            "tracemalloc_peak_median_mb": 8.603934288024902,
+            "rss_max_mb": 192.78515625,
+            "http_total_median": 2002,
+            "last": {
+              "skipped": [],
+              "count": 1000,
+              "requests": {
+                "list": 1,
+                "get": 1000,
+                "put": 1000
+              },
+              "request_total": 2001,
+              "mode": "parallel:8",
+              "seconds": 7.289484573999289,
+              "http_requests": {
+                "azure:get": 1000,
+                "azure:head": 1,
+                "azure:list": 1,
+                "gcs:put": 1000
+              },
+              "http_total": 2002
+            }
+          },
+          "generic_parallel_16": {
+            "cold_s": 7.410125078000419,
+            "warm_median_s": 7.4636443500003224,
+            "median_s": 7.410125078000419,
+            "samples_s": [
+              7.410125078000419,
+              7.403815579000366,
+              7.116999481999301,
+              7.52502738900148,
+              7.523473121000279
+            ],
+            "tracemalloc_peak_median_mb": 9.187419891357422,
+            "rss_max_mb": 192.78515625,
+            "http_total_median": 2002,
+            "last": {
+              "skipped": [],
+              "count": 1000,
+              "requests": {
+                "list": 1,
+                "get": 1000,
+                "put": 1000
+              },
+              "request_total": 2001,
+              "mode": "parallel:16",
+              "seconds": 7.523473121000279,
+              "http_requests": {
+                "azure:get": 1000,
+                "azure:head": 1,
+                "azure:list": 1,
+                "gcs:put": 1000
+              },
+              "http_total": 2002
+            }
+          }
+        }
+      }
+    ],
+    "large_object": [
+      {
+        "pair": "s3->gcs",
+        "size_mb": 100,
+        "modes": {
+          "naive_sequential": {
+            "cold_s": 1.1866446910007653,
+            "warm_median_s": 0.7688430949992835,
+            "median_s": 0.8081787609989988,
+            "samples_s": [
+              1.1866446910007653,
+              0.8081787609989988,
+              0.6633065590012848,
+              0.8292870209988905,
+              0.7295074289995682
+            ],
+            "tracemalloc_peak_median_mb": 136.21835041046143,
+            "rss_max_mb": 490.609375,
+            "http_total_median": 4,
+            "last": {
+              "skipped": [],
+              "count": 1,
+              "requests": {
+                "list:s3": 1,
+                "get:s3": 1,
+                "put:gcs": 1
+              },
+              "request_total": 3,
+              "pair": "s3->gcs",
+              "seconds": 0.7295074289995682,
+              "http_requests": {
+                "gcs:put": 2,
+                "s3:get": 1,
+                "s3:list": 1
+              },
+              "http_total": 4
+            }
+          },
+          "generic_sequential": {
+            "cold_s": 1.0001810109988583,
+            "warm_median_s": 0.8397528769992277,
+            "median_s": 0.8816868569992948,
+            "samples_s": [
+              1.0001810109988583,
+              0.8816868569992948,
+              0.7855457940004271,
+              1.0007347440005105,
+              0.7978188969991606
+            ],
+            "tracemalloc_peak_median_mb": 255.89643573760986,
+            "rss_max_mb": 490.609375,
+            "http_total_median": 6,
+            "last": {
+              "skipped": [],
+              "count": 1,
+              "requests": {
+                "list": 1,
+                "get": 1,
+                "put": 1
+              },
+              "request_total": 3,
+              "mode": "sequential",
+              "seconds": 0.7978188969991606,
+              "http_requests": {
+                "gcs:put": 2,
+                "s3:get": 2,
+                "s3:head": 1,
+                "s3:list": 1
+              },
+              "http_total": 6
+            }
+          },
+          "generic_parallel_4": {
+            "cold_s": 0.7283680330001516,
+            "warm_median_s": 0.7818082849998973,
+            "median_s": 0.7389823869998509,
+            "samples_s": [
+              0.7283680330001516,
+              0.8246341829999437,
+              0.7389823869998509,
+              1.0731840070002363,
+              0.7320718150003813
+            ],
+            "tracemalloc_peak_median_mb": 255.9027509689331,
+            "rss_max_mb": 513.02734375,
+            "http_total_median": 6,
+            "last": {
+              "skipped": [],
+              "count": 1,
+              "requests": {
+                "list": 1,
+                "get": 1,
+                "put": 1
+              },
+              "request_total": 3,
+              "mode": "parallel:4",
+              "seconds": 0.7320718150003813,
+              "http_requests": {
+                "gcs:put": 2,
+                "s3:get": 2,
+                "s3:head": 1,
+                "s3:list": 1
+              },
+              "http_total": 6
+            }
+          }
+        }
+      },
+      {
+        "pair": "gcs->s3",
+        "size_mb": 100,
+        "modes": {
+          "naive_sequential": {
+            "cold_s": 0.9620013319999998,
+            "warm_median_s": 1.073488415000611,
+            "median_s": 1.0684198520011705,
+            "samples_s": [
+              0.9620013319999998,
+              1.0279570769998827,
+              1.0684198520011705,
+              1.1203022029985732,
+              1.0785569780000515
+            ],
+            "tracemalloc_peak_median_mb": 108.78557014465332,
+            "rss_max_mb": 564.26953125,
+            "http_total_median": 4,
+            "last": {
+              "skipped": [],
+              "count": 1,
+              "requests": {
+                "list:gcs": 1,
+                "get:gcs": 1,
+                "put:s3": 1
+              },
+              "request_total": 3,
+              "pair": "gcs->s3",
+              "seconds": 1.0785569780000515,
+              "http_requests": {
+                "gcs:get": 1,
+                "gcs:list": 1,
+                "gcs:metadata": 1,
+                "s3:put": 1
+              },
+              "http_total": 4
+            }
+          },
+          "generic_sequential": {
+            "cold_s": 1.0371235589991556,
+            "warm_median_s": 0.9787715970005593,
+            "median_s": 0.9797776220002561,
+            "samples_s": [
+              1.0371235589991556,
+              0.9777655720008624,
+              0.9797776220002561,
+              1.0111337720009033,
+              0.9448281770000904
+            ],
+            "tracemalloc_peak_median_mb": 211.9234972000122,
+            "rss_max_mb": 564.26953125,
+            "http_total_median": 33,
+            "last": {
+              "skipped": [],
+              "count": 1,
+              "requests": {
+                "list": 1,
+                "get": 1,
+                "put": 1
+              },
+              "request_total": 3,
+              "mode": "sequential",
+              "seconds": 0.9448281770000904,
+              "http_requests": {
+                "gcs:get": 28,
+                "gcs:list": 2,
+                "gcs:metadata": 1,
+                "s3:put": 1
+              },
+              "http_total": 32
+            }
+          },
+          "generic_parallel_4": {
+            "cold_s": 0.982748348998939,
+            "warm_median_s": 0.9536192149998897,
+            "median_s": 0.9631629259984038,
+            "samples_s": [
+              0.982748348998939,
+              0.929094803001135,
+              0.9631629259984038,
+              0.9856958569998824,
+              0.9440755040013755
+            ],
+            "tracemalloc_peak_median_mb": 211.9317865371704,
+            "rss_max_mb": 564.26953125,
+            "http_total_median": 32,
+            "last": {
+              "skipped": [],
+              "count": 1,
+              "requests": {
+                "list": 1,
+                "get": 1,
+                "put": 1
+              },
+              "request_total": 3,
+              "mode": "parallel:4",
+              "seconds": 0.9440755040013755,
+              "http_requests": {
+                "gcs:get": 28,
+                "gcs:list": 2,
+                "gcs:metadata": 1,
+                "s3:put": 1
+              },
+              "http_total": 32
+            }
+          }
+        }
+      },
+      {
+        "pair": "s3->azure",
+        "size_mb": 100,
+        "modes": {
+          "naive_sequential": {
+            "cold_s": 2.0671462820009765,
+            "warm_median_s": 2.135820679999597,
+            "median_s": 2.122128552000504,
+            "samples_s": [
+              2.0671462820009765,
+              1.9749630319984135,
+              2.262341089999609,
+              2.14951280799869,
+              2.122128552000504
+            ],
+            "tracemalloc_peak_median_mb": 136.21501636505127,
+            "rss_max_mb": 580.9140625,
+            "http_total_median": 28,
+            "last": {
+              "skipped": [],
+              "count": 1,
+              "requests": {
+                "list:s3": 1,
+                "get:s3": 1,
+                "put:azure": 1
+              },
+              "request_total": 3,
+              "pair": "s3->azure",
+              "seconds": 2.122128552000504,
+              "http_requests": {
+                "azure:put": 26,
+                "s3:get": 1,
+                "s3:list": 1
+              },
+              "http_total": 28
+            }
+          },
+          "generic_sequential": {
+            "cold_s": 2.4734521329992276,
+            "warm_median_s": 2.069763133500601,
+            "median_s": 2.0954220300009183,
+            "samples_s": [
+              2.4734521329992276,
+              2.1516548590007005,
+              2.0441042370002833,
+              2.0954220300009183,
+              2.0374401030003355
+            ],
+            "tracemalloc_peak_median_mb": 255.89685535430908,
+            "rss_max_mb": 580.9140625,
+            "http_total_median": 30,
+            "last": {
+              "skipped": [],
+              "count": 1,
+              "requests": {
+                "list": 1,
+                "get": 1,
+                "put": 1
+              },
+              "request_total": 3,
+              "mode": "sequential",
+              "seconds": 2.0374401030003355,
+              "http_requests": {
+                "azure:put": 26,
+                "s3:get": 2,
+                "s3:head": 1,
+                "s3:list": 1
+              },
+              "http_total": 30
+            }
+          },
+          "generic_parallel_4": {
+            "cold_s": 2.1921739329991397,
+            "warm_median_s": 2.1391861285010236,
+            "median_s": 2.1673730140009866,
+            "samples_s": [
+              2.1921739329991397,
+              2.1109992430010607,
+              2.1673730140009866,
+              2.17610484800025,
+              2.022518780999235
+            ],
+            "tracemalloc_peak_median_mb": 255.90449619293213,
+            "rss_max_mb": 580.9140625,
+            "http_total_median": 30,
+            "last": {
+              "skipped": [],
+              "count": 1,
+              "requests": {
+                "list": 1,
+                "get": 1,
+                "put": 1
+              },
+              "request_total": 3,
+              "mode": "parallel:4",
+              "seconds": 2.022518780999235,
+              "http_requests": {
+                "azure:put": 26,
+                "s3:get": 2,
+                "s3:head": 1,
+                "s3:list": 1
+              },
+              "http_total": 30
+            }
+          }
+        }
+      },
+      {
+        "pair": "azure->s3",
+        "size_mb": 100,
+        "modes": {
+          "naive_sequential": {
+            "cold_s": 1.5575905240002612,
+            "warm_median_s": 2.1982338375000836,
+            "median_s": 2.070508377000806,
+            "samples_s": [
+              1.5575905240002612,
+              1.7151771669996378,
+              2.3259592979993613,
+              40.478517473000466,
+              2.070508377000806
+            ],
+            "tracemalloc_peak_median_mb": 288.412145614624,
+            "rss_max_mb": 581.734375,
+            "http_total_median": 20,
+            "last": {
+              "skipped": [],
+              "count": 1,
+              "requests": {
+                "list:azure": 1,
+                "get:azure": 1,
+                "put:s3": 1
+              },
+              "request_total": 3,
+              "pair": "azure->s3",
+              "seconds": 2.070508377000806,
+              "http_requests": {
+                "azure:get": 18,
+                "azure:list": 1,
+                "s3:put": 1
+              },
+              "http_total": 20
+            }
+          },
+          "generic_sequential": {
+            "cold_s": 1.3518256129991642,
+            "warm_median_s": 1.4578553270002885,
+            "median_s": 1.4532283440003084,
+            "samples_s": [
+              1.3518256129991642,
+              1.4389991779989941,
+              1.7084510700005922,
+              1.4624823100002686,
+              1.4532283440003084
+            ],
+            "tracemalloc_peak_median_mb": 255.9845371246338,
+            "rss_max_mb": 581.734375,
+            "http_total_median": 16,
+            "last": {
+              "skipped": [],
+              "count": 1,
+              "requests": {
+                "list": 1,
+                "get": 1,
+                "put": 1
+              },
+              "request_total": 3,
+              "mode": "sequential",
+              "seconds": 1.4532283440003084,
+              "http_requests": {
+                "azure:get": 12,
+                "azure:head": 2,
+                "azure:list": 1,
+                "s3:put": 1
+              },
+              "http_total": 16
+            }
+          },
+          "generic_parallel_4": {
+            "cold_s": 1.0669061850003345,
+            "warm_median_s": 1.2673291245000655,
+            "median_s": 1.1911062939998374,
+            "samples_s": [
+              1.0669061850003345,
+              1.0872132690001308,
+              1.1911062939998374,
+              1.3555902259995491,
+              1.3435519550002937
+            ],
+            "tracemalloc_peak_median_mb": 255.9858112335205,
+            "rss_max_mb": 581.734375,
+            "http_total_median": 16,
+            "last": {
+              "skipped": [],
+              "count": 1,
+              "requests": {
+                "list": 1,
+                "get": 1,
+                "put": 1
+              },
+              "request_total": 3,
+              "mode": "parallel:4",
+              "seconds": 1.3435519550002937,
+              "http_requests": {
+                "azure:get": 12,
+                "azure:head": 2,
+                "azure:list": 1,
+                "s3:put": 1
+              },
+              "http_total": 16
+            }
+          }
+        }
+      },
+      {
+        "pair": "gcs->azure",
+        "size_mb": 100,
+        "modes": {
+          "naive_sequential": {
+            "cold_s": 2.8145150899999862,
+            "warm_median_s": 2.280916021500161,
+            "median_s": 2.3489644050005154,
+            "samples_s": [
+              2.8145150899999862,
+              2.3489644050005154,
+              2.212867637999807,
+              2.3617379539991816,
+              2.2111944959997345
+            ],
+            "tracemalloc_peak_median_mb": 108.78608417510986,
+            "rss_max_mb": 593.03515625,
+            "http_total_median": 29,
+            "last": {
+              "skipped": [],
+              "count": 1,
+              "requests": {
+                "list:gcs": 1,
+                "get:gcs": 1,
+                "put:azure": 1
+              },
+              "request_total": 3,
+              "pair": "gcs->azure",
+              "seconds": 2.2111944959997345,
+              "http_requests": {
+                "azure:put": 26,
+                "gcs:get": 1,
+                "gcs:list": 1,
+                "gcs:metadata": 1
+              },
+              "http_total": 29
+            }
+          },
+          "generic_sequential": {
+            "cold_s": 2.26229424200028,
+            "warm_median_s": 2.290099382500557,
+            "median_s": 2.26229424200028,
+            "samples_s": [
+              2.26229424200028,
+              2.440982003001409,
+              2.3867075130001467,
+              1.964047566998488,
+              2.1934912520009675
+            ],
+            "tracemalloc_peak_median_mb": 211.92289066314697,
+            "rss_max_mb": 593.03515625,
+            "http_total_median": 58,
+            "last": {
+              "skipped": [],
+              "count": 1,
+              "requests": {
+                "list": 1,
+                "get": 1,
+                "put": 1
+              },
+              "request_total": 3,
+              "mode": "sequential",
+              "seconds": 2.1934912520009675,
+              "http_requests": {
+                "azure:put": 26,
+                "gcs:get": 28,
+                "gcs:list": 2,
+                "gcs:metadata": 2
+              },
+              "http_total": 58
+            }
+          },
+          "generic_parallel_4": {
+            "cold_s": 2.39828954999939,
+            "warm_median_s": 2.326274191998891,
+            "median_s": 2.3329808019989287,
+            "samples_s": [
+              2.39828954999939,
+              2.3329808019989287,
+              2.3195675819988537,
+              2.2551510270004655,
+              2.347585692999928
+            ],
+            "tracemalloc_peak_median_mb": 211.9308671951294,
+            "rss_max_mb": 593.03515625,
+            "http_total_median": 57,
+            "last": {
+              "skipped": [],
+              "count": 1,
+              "requests": {
+                "list": 1,
+                "get": 1,
+                "put": 1
+              },
+              "request_total": 3,
+              "mode": "parallel:4",
+              "seconds": 2.347585692999928,
+              "http_requests": {
+                "azure:put": 26,
+                "gcs:get": 28,
+                "gcs:list": 2,
+                "gcs:metadata": 1
+              },
+              "http_total": 57
+            }
+          }
+        }
+      },
+      {
+        "pair": "azure->gcs",
+        "size_mb": 100,
+        "modes": {
+          "naive_sequential": {
+            "cold_s": 2.1652121900006023,
+            "warm_median_s": 1.4295090409996192,
+            "median_s": 1.437778569999864,
+            "samples_s": [
+              2.1652121900006023,
+              1.6957245780013182,
+              1.437778569999864,
+              1.4212395119993744,
+              1.3679242929993052
+            ],
+            "tracemalloc_peak_median_mb": 288.4117259979248,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 21,
+            "last": {
+              "skipped": [],
+              "count": 1,
+              "requests": {
+                "list:azure": 1,
+                "get:azure": 1,
+                "put:gcs": 1
+              },
+              "request_total": 3,
+              "pair": "azure->gcs",
+              "seconds": 1.3679242929993052,
+              "http_requests": {
+                "azure:get": 18,
+                "azure:list": 1,
+                "gcs:put": 2
+              },
+              "http_total": 21
+            }
+          },
+          "generic_sequential": {
+            "cold_s": 0.9004536930005997,
+            "warm_median_s": 0.9790904654992119,
+            "median_s": 0.9622550759995647,
+            "samples_s": [
+              0.9004536930005997,
+              0.995925854998859,
+              0.9280579130008846,
+              0.9622550759995647,
+              1.0277101219999167
+            ],
+            "tracemalloc_peak_median_mb": 255.97656917572021,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 17,
+            "last": {
+              "skipped": [],
+              "count": 1,
+              "requests": {
+                "list": 1,
+                "get": 1,
+                "put": 1
+              },
+              "request_total": 3,
+              "mode": "sequential",
+              "seconds": 1.0277101219999167,
+              "http_requests": {
+                "azure:get": 12,
+                "azure:head": 2,
+                "azure:list": 1,
+                "gcs:put": 2
+              },
+              "http_total": 17
+            }
+          },
+          "generic_parallel_4": {
+            "cold_s": 1.201852535999933,
+            "warm_median_s": 1.0543627699998979,
+            "median_s": 1.0671980169991002,
+            "samples_s": [
+              1.201852535999933,
+              1.0671980169991002,
+              1.0415275230006955,
+              0.9689017689997854,
+              1.2120499690008728
+            ],
+            "tracemalloc_peak_median_mb": 255.98091793060303,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 17,
+            "last": {
+              "skipped": [],
+              "count": 1,
+              "requests": {
+                "list": 1,
+                "get": 1,
+                "put": 1
+              },
+              "request_total": 3,
+              "mode": "parallel:4",
+              "seconds": 1.2120499690008728,
+              "http_requests": {
+                "azure:get": 12,
+                "azure:head": 2,
+                "azure:list": 1,
+                "gcs:put": 2
+              },
+              "http_total": 17
+            }
+          }
+        }
+      }
+    ],
+    "server_side_same_provider": [
+      {
+        "pair": "s3->s3",
+        "modes": {
+          "server_side": {
+            "cold_s": 0.01905509800053551,
+            "warm_median_s": 0.013943623500381364,
+            "median_s": 0.014112541000940837,
+            "samples_s": [
+              0.01905509800053551,
+              0.01377470599982189,
+              0.014798438998695929,
+              0.013491806001184159,
+              0.014112541000940837
+            ],
+            "tracemalloc_peak_median_mb": 0.27601146697998047,
+            "rss_max_mb": 129.8125,
+            "http_total_median": 3,
+            "last": {
+              "skipped": [],
+              "count": 2,
+              "requests": {
+                "list": 1,
+                "copy_object": 2
+              },
+              "request_total": 3,
+              "mode": "server_side:s3",
+              "seconds": 0.014112541000940837,
+              "http_requests": {
+                "s3:list": 1,
+                "s3:put": 2
+              },
+              "http_total": 3
+            }
+          },
+          "read_write": {
+            "cold_s": 0.02608187999976508,
+            "warm_median_s": 0.0231077179996646,
+            "median_s": 0.023352033000264782,
+            "samples_s": [
+              0.02608187999976508,
+              0.02286340299906442,
+              0.03291643699958513,
+              0.020692948000942124,
+              0.023352033000264782
+            ],
+            "tracemalloc_peak_median_mb": 0.2881736755371094,
+            "rss_max_mb": 130.1875,
+            "http_total_median": 5,
+            "last": {
+              "skipped": [],
+              "count": 2,
+              "requests": {
+                "list": 1,
+                "get": 2,
+                "put": 2
+              },
+              "request_total": 5,
+              "mode": "sequential",
+              "seconds": 0.023352033000264782,
+              "http_requests": {
+                "s3:get": 2,
+                "s3:list": 1,
+                "s3:put": 2
+              },
+              "http_total": 5
+            }
+          }
+        }
+      },
+      {
+        "pair": "gcs->gcs",
+        "modes": {
+          "server_side": {
+            "cold_s": 0.007948090000354568,
+            "warm_median_s": 0.006304667499534844,
+            "median_s": 0.00660498999968695,
+            "samples_s": [
+              0.007948090000354568,
+              0.005730702001528698,
+              0.006856195001091692,
+              0.00660498999968695,
+              0.006004344999382738
+            ],
+            "tracemalloc_peak_median_mb": 0.26698970794677734,
+            "rss_max_mb": 130.3125,
+            "http_total_median": 3,
+            "last": {
+              "skipped": [],
+              "count": 2,
+              "requests": {
+                "list": 1,
+                "copy_blob": 2
+              },
+              "request_total": 3,
+              "mode": "server_side:gcs",
+              "seconds": 0.006004344999382738,
+              "http_requests": {
+                "gcs:list": 1,
+                "gcs:put": 2
+              },
+              "http_total": 3
+            }
+          },
+          "read_write": {
+            "cold_s": 0.009809224000491668,
+            "warm_median_s": 0.009324690499852295,
+            "median_s": 0.00962628900015261,
+            "samples_s": [
+              0.009809224000491668,
+              0.00962628900015261,
+              0.00902309199955198,
+              0.010555880000538309,
+              0.00858901399988099
+            ],
+            "tracemalloc_peak_median_mb": 0.2795438766479492,
+            "rss_max_mb": 130.4375,
+            "http_total_median": 5,
+            "last": {
+              "skipped": [],
+              "count": 2,
+              "requests": {
+                "list": 1,
+                "get": 2,
+                "put": 2
+              },
+              "request_total": 5,
+              "mode": "sequential",
+              "seconds": 0.00858901399988099,
+              "http_requests": {
+                "gcs:get": 2,
+                "gcs:list": 1,
+                "gcs:put": 2
+              },
+              "http_total": 5
+            }
+          }
+        }
+      },
+      {
+        "pair": "azure->azure",
+        "modes": {
+          "server_side": {
+            "cold_s": 0.022710884999469272,
+            "warm_median_s": 0.02269228050045058,
+            "median_s": 0.022710884999469272,
+            "samples_s": [
+              0.022710884999469272,
+              0.023306263999984367,
+              0.022624912000537734,
+              0.021754642000814783,
+              0.022759649000363424
+            ],
+            "tracemalloc_peak_median_mb": 0.35005950927734375,
+            "rss_max_mb": 130.5625,
+            "http_total_median": 4,
+            "last": {
+              "skipped": [],
+              "count": 2,
+              "requests": {
+                "list": 1,
+                "start_copy_from_url": 2
+              },
+              "request_total": 3,
+              "mode": "server_side:azure",
+              "seconds": 0.022759649000363424,
+              "http_requests": {
+                "azure:head": 1,
+                "azure:list": 1,
+                "azure:put": 2
+              },
+              "http_total": 4
+            }
+          },
+          "read_write": {
+            "cold_s": 0.03704557799937902,
+            "warm_median_s": 0.036244699000235414,
+            "median_s": 0.036926493999999366,
+            "samples_s": [
+              0.03704557799937902,
+              0.036926493999999366,
+              0.03556290400047146,
+              0.03716439599884325,
+              0.03339859999869077
+            ],
+            "tracemalloc_peak_median_mb": 0.4123210906982422,
+            "rss_max_mb": 130.5625,
+            "http_total_median": 6,
+            "last": {
+              "skipped": [],
+              "count": 2,
+              "requests": {
+                "list": 1,
+                "get": 2,
+                "put": 2
+              },
+              "request_total": 5,
+              "mode": "sequential",
+              "seconds": 0.03339859999869077,
+              "http_requests": {
+                "azure:get": 2,
+                "azure:head": 1,
+                "azure:list": 1,
+                "azure:put": 2
+              },
+              "http_total": 6
+            }
+          }
+        }
+      }
+    ],
+    "wire_latency": [
+      {
+        "pair": "s3->gcs",
+        "modes": {
+          "naive_sequential": {
+            "cold_s": 9.969850647001294,
+            "warm_median_s": 9.968299737000052,
+            "median_s": 9.969186550999439,
+            "samples_s": [
+              9.969850647001294,
+              10.008355220999874,
+              9.969186550999439,
+              9.940005225000277,
+              9.967412923000666
+            ],
+            "tracemalloc_peak_median_mb": 0.8104848861694336,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 411,
+            "last": {
+              "skipped": [],
+              "count": 205,
+              "requests": {
+                "list:s3": 1,
+                "get:s3": 205,
+                "put:gcs": 205
+              },
+              "request_total": 411,
+              "pair": "s3->gcs",
+              "seconds": 9.967412923000666,
+              "http_requests": {
+                "gcs:put": 205,
+                "s3:get": 205,
+                "s3:list": 1
+              },
+              "http_total": 411
+            }
+          },
+          "generic_sequential_per_key": {
+            "cold_s": 20.12082292100058,
+            "warm_median_s": 20.338306938999267,
+            "median_s": 20.25548687599985,
+            "samples_s": [
+              20.12082292100058,
+              20.172601272000975,
+              20.421127001998684,
+              20.791289657998277,
+              20.25548687599985
+            ],
+            "tracemalloc_peak_median_mb": 0.7089433670043945,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 811,
+            "last": {
+              "skipped": [],
+              "count": 200,
+              "requests": {
+                "list": 1,
+                "get": 200,
+                "put": 200
+              },
+              "request_total": 401,
+              "mode": "sequential",
+              "seconds": 20.25548687599985,
+              "http_requests": {
+                "gcs:put": 200,
+                "s3:get": 200,
+                "s3:head": 405,
+                "s3:list": 6
+              },
+              "http_total": 811
+            }
+          },
+          "generic_sequential": {
+            "cold_s": 9.839802561999022,
+            "warm_median_s": 9.927412043999539,
+            "median_s": 9.906437374000234,
+            "samples_s": [
+              9.839802561999022,
+              9.906437374000234,
+              9.839393225000094,
+              10.261341327999617,
+              9.948386713998843
+            ],
+            "tracemalloc_peak_median_mb": 0.7195539474487305,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 401,
+            "last": {
+              "skipped": [],
+              "count": 200,
+              "requests": {
+                "list": 1,
+                "get": 200,
+                "put": 200
+              },
+              "request_total": 401,
+              "mode": "sequential",
+              "seconds": 9.948386713998843,
+              "http_requests": {
+                "gcs:put": 200,
+                "s3:get": 200,
+                "s3:list": 1
+              },
+              "http_total": 401
+            }
+          },
+          "generic_parallel_4": {
+            "cold_s": 2.5575404949995573,
+            "warm_median_s": 2.560161753999637,
+            "median_s": 2.5575404949995573,
+            "samples_s": [
+              2.5575404949995573,
+              2.6447945130003063,
+              2.553261589999238,
+              2.5332899919994816,
+              2.567061918000036
+            ],
+            "tracemalloc_peak_median_mb": 1.1643543243408203,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 401,
+            "last": {
+              "skipped": [],
+              "count": 200,
+              "requests": {
+                "list": 1,
+                "get": 200,
+                "put": 200
+              },
+              "request_total": 401,
+              "mode": "parallel:4",
+              "seconds": 2.567061918000036,
+              "http_requests": {
+                "gcs:put": 200,
+                "s3:get": 200,
+                "s3:list": 1
+              },
+              "http_total": 401
+            }
+          },
+          "generic_parallel_8": {
+            "cold_s": 1.4301159789993108,
+            "warm_median_s": 1.4680341619996398,
+            "median_s": 1.4493710349997855,
+            "samples_s": [
+              1.4301159789993108,
+              1.4493710349997855,
+              1.4433435820010345,
+              1.486697288999494,
+              1.5463708600000245
+            ],
+            "tracemalloc_peak_median_mb": 1.3150815963745117,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 401,
+            "last": {
+              "skipped": [],
+              "count": 200,
+              "requests": {
+                "list": 1,
+                "get": 200,
+                "put": 200
+              },
+              "request_total": 401,
+              "mode": "parallel:8",
+              "seconds": 1.5463708600000245,
+              "http_requests": {
+                "gcs:put": 200,
+                "s3:get": 200,
+                "s3:list": 1
+              },
+              "http_total": 401
+            }
+          },
+          "generic_parallel_16": {
+            "cold_s": 1.442260752999573,
+            "warm_median_s": 1.431001531500442,
+            "median_s": 1.442260752999573,
+            "samples_s": [
+              1.442260752999573,
+              1.319124945999647,
+              1.4151469560001715,
+              1.6056479070011846,
+              1.4468561070007127
+            ],
+            "tracemalloc_peak_median_mb": 1.6320438385009766,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 401,
+            "last": {
+              "skipped": [],
+              "count": 200,
+              "requests": {
+                "list": 1,
+                "get": 200,
+                "put": 200
+              },
+              "request_total": 401,
+              "mode": "parallel:16",
+              "seconds": 1.4468561070007127,
+              "http_requests": {
+                "gcs:put": 200,
+                "s3:get": 200,
+                "s3:list": 1
+              },
+              "http_total": 401
+            }
+          }
+        }
+      },
+      {
+        "pair": "gcs->s3",
+        "modes": {
+          "naive_sequential": {
+            "cold_s": 10.251339824999377,
+            "warm_median_s": 10.380446717999803,
+            "median_s": 10.29320925599859,
+            "samples_s": [
+              10.251339824999377,
+              10.535860512,
+              10.467684180001015,
+              10.232861968001089,
+              10.29320925599859
+            ],
+            "tracemalloc_peak_median_mb": 0.8671274185180664,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 412,
+            "last": {
+              "skipped": [],
+              "count": 205,
+              "requests": {
+                "list:gcs": 1,
+                "get:gcs": 205,
+                "put:s3": 205
+              },
+              "request_total": 411,
+              "pair": "gcs->s3",
+              "seconds": 10.29320925599859,
+              "http_requests": {
+                "gcs:get": 205,
+                "gcs:list": 1,
+                "gcs:metadata": 1,
+                "s3:put": 205
+              },
+              "http_total": 412
+            }
+          },
+          "generic_sequential_per_key": {
+            "cold_s": 19.595009630000277,
+            "warm_median_s": 19.229483090999565,
+            "median_s": 19.3354575329995,
+            "samples_s": [
+              19.595009630000277,
+              19.123508648999632,
+              19.3354575329995,
+              19.08214532400052,
+              19.650721029000124
+            ],
+            "tracemalloc_peak_median_mb": 0.8441944122314453,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 1307,
+            "last": {
+              "skipped": [],
+              "count": 200,
+              "requests": {
+                "list": 1,
+                "get": 200,
+                "put": 200
+              },
+              "request_total": 401,
+              "mode": "sequential",
+              "seconds": 19.650721029000124,
+              "http_requests": {
+                "gcs:get": 200,
+                "gcs:list": 406,
+                "gcs:metadata": 501,
+                "s3:put": 200
+              },
+              "http_total": 1307
+            }
+          },
+          "generic_sequential": {
+            "cold_s": 9.880707364000045,
+            "warm_median_s": 9.785134172999278,
+            "median_s": 9.791602348999731,
+            "samples_s": [
+              9.880707364000045,
+              9.778665996998825,
+              10.176532969999244,
+              9.791602348999731,
+              9.709250576999693
+            ],
+            "tracemalloc_peak_median_mb": 0.8443059921264648,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 401,
+            "last": {
+              "skipped": [],
+              "count": 200,
+              "requests": {
+                "list": 1,
+                "get": 200,
+                "put": 200
+              },
+              "request_total": 401,
+              "mode": "sequential",
+              "seconds": 9.709250576999693,
+              "http_requests": {
+                "gcs:get": 200,
+                "gcs:list": 1,
+                "s3:put": 200
+              },
+              "http_total": 401
+            }
+          },
+          "generic_parallel_4": {
+            "cold_s": 2.4899465090002195,
+            "warm_median_s": 2.630041605999395,
+            "median_s": 2.5593172009994305,
+            "samples_s": [
+              2.4899465090002195,
+              2.5593172009994305,
+              2.5041914400007954,
+              2.787034468999991,
+              2.7007660109993594
+            ],
+            "tracemalloc_peak_median_mb": 1.036759376525879,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 401,
+            "last": {
+              "skipped": [],
+              "count": 200,
+              "requests": {
+                "list": 1,
+                "get": 200,
+                "put": 200
+              },
+              "request_total": 401,
+              "mode": "parallel:4",
+              "seconds": 2.7007660109993594,
+              "http_requests": {
+                "gcs:get": 200,
+                "gcs:list": 1,
+                "s3:put": 200
+              },
+              "http_total": 401
+            }
+          },
+          "generic_parallel_8": {
+            "cold_s": 1.4401068130009662,
+            "warm_median_s": 1.4400342184999317,
+            "median_s": 1.4401068130009662,
+            "samples_s": [
+              1.4401068130009662,
+              1.3616456219988322,
+              1.3495760950008844,
+              1.5184228150010313,
+              1.51918931200089
+            ],
+            "tracemalloc_peak_median_mb": 1.1008615493774414,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 401,
+            "last": {
+              "skipped": [],
+              "count": 200,
+              "requests": {
+                "list": 1,
+                "get": 200,
+                "put": 200
+              },
+              "request_total": 401,
+              "mode": "parallel:8",
+              "seconds": 1.51918931200089,
+              "http_requests": {
+                "gcs:get": 200,
+                "gcs:list": 1,
+                "s3:put": 200
+              },
+              "http_total": 401
+            }
+          },
+          "generic_parallel_16": {
+            "cold_s": 1.043026777000705,
+            "warm_median_s": 1.0976831975003734,
+            "median_s": 1.0707909049997397,
+            "samples_s": [
+              1.043026777000705,
+              1.0707909049997397,
+              1.1362720880006236,
+              1.124575490001007,
+              0.9417112799983443
+            ],
+            "tracemalloc_peak_median_mb": 1.283757209777832,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 401,
+            "last": {
+              "skipped": [],
+              "count": 200,
+              "requests": {
+                "list": 1,
+                "get": 200,
+                "put": 200
+              },
+              "request_total": 401,
+              "mode": "parallel:16",
+              "seconds": 0.9417112799983443,
+              "http_requests": {
+                "gcs:get": 200,
+                "gcs:list": 1,
+                "s3:put": 200
+              },
+              "http_total": 401
+            }
+          }
+        }
+      },
+      {
+        "pair": "s3->azure",
+        "modes": {
+          "naive_sequential": {
+            "cold_s": 11.54930331399919,
+            "warm_median_s": 11.23690746649936,
+            "median_s": 11.254734667998491,
+            "samples_s": [
+              11.54930331399919,
+              11.19876332199965,
+              11.495461610000348,
+              11.21908026500023,
+              11.254734667998491
+            ],
+            "tracemalloc_peak_median_mb": 0.8123464584350586,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 411,
+            "last": {
+              "skipped": [],
+              "count": 205,
+              "requests": {
+                "list:s3": 1,
+                "get:s3": 205,
+                "put:azure": 205
+              },
+              "request_total": 411,
+              "pair": "s3->azure",
+              "seconds": 11.254734667998491,
+              "http_requests": {
+                "azure:put": 205,
+                "s3:get": 205,
+                "s3:list": 1
+              },
+              "http_total": 411
+            }
+          },
+          "generic_sequential_per_key": {
+            "cold_s": 21.93058709199977,
+            "warm_median_s": 22.44658781150065,
+            "median_s": 22.20829016800053,
+            "samples_s": [
+              21.93058709199977,
+              22.20829016800053,
+              21.932054438000705,
+              22.684885455000767,
+              22.771026946000347
+            ],
+            "tracemalloc_peak_median_mb": 0.8513641357421875,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 811,
+            "last": {
+              "skipped": [],
+              "count": 200,
+              "requests": {
+                "list": 1,
+                "get": 200,
+                "put": 200
+              },
+              "request_total": 401,
+              "mode": "sequential",
+              "seconds": 22.771026946000347,
+              "http_requests": {
+                "azure:put": 200,
+                "s3:get": 200,
+                "s3:head": 405,
+                "s3:list": 6
+              },
+              "http_total": 811
+            }
+          },
+          "generic_sequential": {
+            "cold_s": 11.357425382999281,
+            "warm_median_s": 11.53465680950012,
+            "median_s": 11.407688530000087,
+            "samples_s": [
+              11.357425382999281,
+              11.100596855998447,
+              11.407688530000087,
+              11.845000936998986,
+              11.661625089000154
+            ],
+            "tracemalloc_peak_median_mb": 0.8507146835327148,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 401,
+            "last": {
+              "skipped": [],
+              "count": 200,
+              "requests": {
+                "list": 1,
+                "get": 200,
+                "put": 200
+              },
+              "request_total": 401,
+              "mode": "sequential",
+              "seconds": 11.661625089000154,
+              "http_requests": {
+                "azure:put": 200,
+                "s3:get": 200,
+                "s3:list": 1
+              },
+              "http_total": 401
+            }
+          },
+          "generic_parallel_4": {
+            "cold_s": 2.8537468279992027,
+            "warm_median_s": 2.9228259689998595,
+            "median_s": 2.886742028000299,
+            "samples_s": [
+              2.8537468279992027,
+              3.2630445009999676,
+              2.886742028000299,
+              2.8474933939996845,
+              2.95890990999942
+            ],
+            "tracemalloc_peak_median_mb": 1.5258827209472656,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 401,
+            "last": {
+              "skipped": [],
+              "count": 200,
+              "requests": {
+                "list": 1,
+                "get": 200,
+                "put": 200
+              },
+              "request_total": 401,
+              "mode": "parallel:4",
+              "seconds": 2.95890990999942,
+              "http_requests": {
+                "azure:put": 200,
+                "s3:get": 200,
+                "s3:list": 1
+              },
+              "http_total": 401
+            }
+          },
+          "generic_parallel_8": {
+            "cold_s": 2.016931359999944,
+            "warm_median_s": 1.8239926184996875,
+            "median_s": 1.8393767350007693,
+            "samples_s": [
+              2.016931359999944,
+              1.8393767350007693,
+              1.8701969649991952,
+              1.800867895999545,
+              1.8086085019986058
+            ],
+            "tracemalloc_peak_median_mb": 2.1032257080078125,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 401,
+            "last": {
+              "skipped": [],
+              "count": 200,
+              "requests": {
+                "list": 1,
+                "get": 200,
+                "put": 200
+              },
+              "request_total": 401,
+              "mode": "parallel:8",
+              "seconds": 1.8086085019986058,
+              "http_requests": {
+                "azure:put": 200,
+                "s3:get": 200,
+                "s3:list": 1
+              },
+              "http_total": 401
+            }
+          },
+          "generic_parallel_16": {
+            "cold_s": 1.7169892780002556,
+            "warm_median_s": 1.6592646825010888,
+            "median_s": 1.6606722390006325,
+            "samples_s": [
+              1.7169892780002556,
+              1.6578571260015451,
+              1.7822553999994852,
+              1.6606722390006325,
+              1.64356967599997
+            ],
+            "tracemalloc_peak_median_mb": 2.5703248977661133,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 401,
+            "last": {
+              "skipped": [],
+              "count": 200,
+              "requests": {
+                "list": 1,
+                "get": 200,
+                "put": 200
+              },
+              "request_total": 401,
+              "mode": "parallel:16",
+              "seconds": 1.64356967599997,
+              "http_requests": {
+                "azure:put": 200,
+                "s3:get": 200,
+                "s3:list": 1
+              },
+              "http_total": 401
+            }
+          }
+        }
+      },
+      {
+        "pair": "azure->s3",
+        "modes": {
+          "naive_sequential": {
+            "cold_s": 10.989345480000338,
+            "warm_median_s": 11.10364614250011,
+            "median_s": 11.078625443999044,
+            "samples_s": [
+              10.989345480000338,
+              10.89677725799993,
+              11.128666841001177,
+              11.078625443999044,
+              11.505591150000328
+            ],
+            "tracemalloc_peak_median_mb": 1.6903505325317383,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 416,
+            "last": {
+              "skipped": [],
+              "count": 205,
+              "requests": {
+                "list:azure": 1,
+                "get:azure": 205,
+                "put:s3": 205
+              },
+              "request_total": 411,
+              "pair": "azure->s3",
+              "seconds": 11.505591150000328,
+              "http_requests": {
+                "azure:get": 210,
+                "azure:list": 1,
+                "s3:put": 205
+              },
+              "http_total": 416
+            }
+          },
+          "generic_sequential_per_key": {
+            "cold_s": 21.856288365999717,
+            "warm_median_s": 22.778210499500346,
+            "median_s": 22.06691406400023,
+            "samples_s": [
+              21.856288365999717,
+              22.06691406400023,
+              21.755958472998827,
+              23.489506935000463,
+              24.052220459998352
+            ],
+            "tracemalloc_peak_median_mb": 1.729421615600586,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 810,
+            "last": {
+              "skipped": [],
+              "count": 200,
+              "requests": {
+                "list": 1,
+                "get": 200,
+                "put": 200
+              },
+              "request_total": 401,
+              "mode": "sequential",
+              "seconds": 24.052220459998352,
+              "http_requests": {
+                "azure:get": 200,
+                "azure:head": 405,
+                "azure:list": 5,
+                "s3:put": 200
+              },
+              "http_total": 810
+            }
+          },
+          "generic_sequential": {
+            "cold_s": 11.447345595001025,
+            "warm_median_s": 11.066905737500747,
+            "median_s": 11.104330771000605,
+            "samples_s": [
+              11.447345595001025,
+              11.029480704000889,
+              11.002454470000885,
+              11.104330771000605,
+              11.295537212999989
+            ],
+            "tracemalloc_peak_median_mb": 1.7383184432983398,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 402,
+            "last": {
+              "skipped": [],
+              "count": 200,
+              "requests": {
+                "list": 1,
+                "get": 200,
+                "put": 200
+              },
+              "request_total": 401,
+              "mode": "sequential",
+              "seconds": 11.295537212999989,
+              "http_requests": {
+                "azure:get": 200,
+                "azure:head": 1,
+                "azure:list": 1,
+                "s3:put": 200
+              },
+              "http_total": 402
+            }
+          },
+          "generic_parallel_4": {
+            "cold_s": 2.9770322940003098,
+            "warm_median_s": 3.0259305259996836,
+            "median_s": 3.004147899999225,
+            "samples_s": [
+              2.9770322940003098,
+              2.930517061999126,
+              3.047713152000142,
+              3.004147899999225,
+              3.167172681000011
+            ],
+            "tracemalloc_peak_median_mb": 2.264822006225586,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 402,
+            "last": {
+              "skipped": [],
+              "count": 200,
+              "requests": {
+                "list": 1,
+                "get": 200,
+                "put": 200
+              },
+              "request_total": 401,
+              "mode": "parallel:4",
+              "seconds": 3.167172681000011,
+              "http_requests": {
+                "azure:get": 200,
+                "azure:head": 1,
+                "azure:list": 1,
+                "s3:put": 200
+              },
+              "http_total": 402
+            }
+          },
+          "generic_parallel_8": {
+            "cold_s": 1.9360110260004149,
+            "warm_median_s": 1.9469396744989353,
+            "median_s": 1.9360110260004149,
+            "samples_s": [
+              1.9360110260004149,
+              2.139938724001695,
+              2.004067743999258,
+              1.889811604998613,
+              1.8348326569994242
+            ],
+            "tracemalloc_peak_median_mb": 2.6352968215942383,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 402,
+            "last": {
+              "skipped": [],
+              "count": 200,
+              "requests": {
+                "list": 1,
+                "get": 200,
+                "put": 200
+              },
+              "request_total": 401,
+              "mode": "parallel:8",
+              "seconds": 1.8348326569994242,
+              "http_requests": {
+                "azure:get": 200,
+                "azure:head": 1,
+                "azure:list": 1,
+                "s3:put": 200
+              },
+              "http_total": 402
+            }
+          },
+          "generic_parallel_16": {
+            "cold_s": 1.7978226220002398,
+            "warm_median_s": 1.7330738689997816,
+            "median_s": 1.7529437089997373,
+            "samples_s": [
+              1.7978226220002398,
+              1.7127943120012787,
+              1.7132040289998258,
+              1.7529437089997373,
+              1.7978774510011135
+            ],
+            "tracemalloc_peak_median_mb": 2.1309823989868164,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 402,
+            "last": {
+              "skipped": [],
+              "count": 200,
+              "requests": {
+                "list": 1,
+                "get": 200,
+                "put": 200
+              },
+              "request_total": 401,
+              "mode": "parallel:16",
+              "seconds": 1.7978774510011135,
+              "http_requests": {
+                "azure:get": 200,
+                "azure:head": 1,
+                "azure:list": 1,
+                "s3:put": 200
+              },
+              "http_total": 402
+            }
+          }
+        }
+      },
+      {
+        "pair": "gcs->azure",
+        "modes": {
+          "naive_sequential": {
+            "cold_s": 10.548163438001211,
+            "warm_median_s": 11.093335687500257,
+            "median_s": 10.909426559999702,
+            "samples_s": [
+              10.548163438001211,
+              11.277244815000813,
+              11.404169320998335,
+              10.59609679499954,
+              10.909426559999702
+            ],
+            "tracemalloc_peak_median_mb": 0.8759565353393555,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 412,
+            "last": {
+              "skipped": [],
+              "count": 205,
+              "requests": {
+                "list:gcs": 1,
+                "get:gcs": 205,
+                "put:azure": 205
+              },
+              "request_total": 411,
+              "pair": "gcs->azure",
+              "seconds": 10.909426559999702,
+              "http_requests": {
+                "azure:put": 205,
+                "gcs:get": 205,
+                "gcs:list": 1,
+                "gcs:metadata": 1
+              },
+              "http_total": 412
+            }
+          },
+          "generic_sequential_per_key": {
+            "cold_s": 19.917176523998933,
+            "warm_median_s": 19.949874062500385,
+            "median_s": 19.917176523998933,
+            "samples_s": [
+              19.917176523998933,
+              20.086071974999868,
+              20.233836301998963,
+              19.69858805000149,
+              19.8136761500009
+            ],
+            "tracemalloc_peak_median_mb": 0.8533153533935547,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 1349,
+            "last": {
+              "skipped": [],
+              "count": 200,
+              "requests": {
+                "list": 1,
+                "get": 200,
+                "put": 200
+              },
+              "request_total": 401,
+              "mode": "sequential",
+              "seconds": 19.8136761500009,
+              "http_requests": {
+                "azure:put": 200,
+                "gcs:get": 200,
+                "gcs:list": 406,
+                "gcs:metadata": 534
+              },
+              "http_total": 1340
+            }
+          },
+          "generic_sequential": {
+            "cold_s": 10.135453232000145,
+            "warm_median_s": 10.59573658050067,
+            "median_s": 10.307833609000227,
+            "samples_s": [
+              10.135453232000145,
+              10.085379292000653,
+              10.307833609000227,
+              10.883639552001114,
+              11.31270104900068
+            ],
+            "tracemalloc_peak_median_mb": 0.8630514144897461,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 401,
+            "last": {
+              "skipped": [],
+              "count": 200,
+              "requests": {
+                "list": 1,
+                "get": 200,
+                "put": 200
+              },
+              "request_total": 401,
+              "mode": "sequential",
+              "seconds": 11.31270104900068,
+              "http_requests": {
+                "azure:put": 200,
+                "gcs:get": 200,
+                "gcs:list": 1
+              },
+              "http_total": 401
+            }
+          },
+          "generic_parallel_4": {
+            "cold_s": 2.7292815930013603,
+            "warm_median_s": 2.730810150999787,
+            "median_s": 2.7292815930013603,
+            "samples_s": [
+              2.7292815930013603,
+              2.705966224999429,
+              3.1040787050005747,
+              2.7556540770001448,
+              2.6550009019993013
+            ],
+            "tracemalloc_peak_median_mb": 1.5823278427124023,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 401,
+            "last": {
+              "skipped": [],
+              "count": 200,
+              "requests": {
+                "list": 1,
+                "get": 200,
+                "put": 200
+              },
+              "request_total": 401,
+              "mode": "parallel:4",
+              "seconds": 2.6550009019993013,
+              "http_requests": {
+                "azure:put": 200,
+                "gcs:get": 200,
+                "gcs:list": 1
+              },
+              "http_total": 401
+            }
+          },
+          "generic_parallel_8": {
+            "cold_s": 1.6508433830003924,
+            "warm_median_s": 1.5651768835004987,
+            "median_s": 1.5947492640007113,
+            "samples_s": [
+              1.6508433830003924,
+              1.4354883619998873,
+              1.6449761090007087,
+              1.535604503000286,
+              1.5947492640007113
+            ],
+            "tracemalloc_peak_median_mb": 2.200441360473633,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 401,
+            "last": {
+              "skipped": [],
+              "count": 200,
+              "requests": {
+                "list": 1,
+                "get": 200,
+                "put": 200
+              },
+              "request_total": 401,
+              "mode": "parallel:8",
+              "seconds": 1.5947492640007113,
+              "http_requests": {
+                "azure:put": 200,
+                "gcs:get": 200,
+                "gcs:list": 1
+              },
+              "http_total": 401
+            }
+          },
+          "generic_parallel_16": {
+            "cold_s": 1.5883465410006465,
+            "warm_median_s": 1.246113665998564,
+            "median_s": 1.2685021669985872,
+            "samples_s": [
+              1.5883465410006465,
+              1.1483349049995013,
+              1.2752304959994945,
+              1.223725164998541,
+              1.2685021669985872
+            ],
+            "tracemalloc_peak_median_mb": 2.787055015563965,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 401,
+            "last": {
+              "skipped": [],
+              "count": 200,
+              "requests": {
+                "list": 1,
+                "get": 200,
+                "put": 200
+              },
+              "request_total": 401,
+              "mode": "parallel:16",
+              "seconds": 1.2685021669985872,
+              "http_requests": {
+                "azure:put": 200,
+                "gcs:get": 200,
+                "gcs:list": 1
+              },
+              "http_total": 401
+            }
+          }
+        }
+      },
+      {
+        "pair": "azure->gcs",
+        "modes": {
+          "naive_sequential": {
+            "cold_s": 10.863631526999598,
+            "warm_median_s": 10.975925697999628,
+            "median_s": 10.925827838998885,
+            "samples_s": [
+              10.863631526999598,
+              11.048800594000568,
+              10.72331978800139,
+              11.026023557000372,
+              10.925827838998885
+            ],
+            "tracemalloc_peak_median_mb": 1.6876792907714844,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 416,
+            "last": {
+              "skipped": [],
+              "count": 205,
+              "requests": {
+                "list:azure": 1,
+                "get:azure": 205,
+                "put:gcs": 205
+              },
+              "request_total": 411,
+              "pair": "azure->gcs",
+              "seconds": 10.925827838998885,
+              "http_requests": {
+                "azure:get": 210,
+                "azure:list": 1,
+                "gcs:put": 205
+              },
+              "http_total": 416
+            }
+          },
+          "generic_sequential_per_key": {
+            "cold_s": 21.073647192999488,
+            "warm_median_s": 20.999140014999284,
+            "median_s": 21.073647192999488,
+            "samples_s": [
+              21.073647192999488,
+              20.87069175399847,
+              20.903814896999393,
+              21.094465132999176,
+              21.324194435001118
+            ],
+            "tracemalloc_peak_median_mb": 1.7490835189819336,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 810,
+            "last": {
+              "skipped": [],
+              "count": 200,
+              "requests": {
+                "list": 1,
+                "get": 200,
+                "put": 200
+              },
+              "request_total": 401,
+              "mode": "sequential",
+              "seconds": 21.324194435001118,
+              "http_requests": {
+                "azure:get": 200,
+                "azure:head": 405,
+                "azure:list": 5,
+                "gcs:put": 200
+              },
+              "http_total": 810
+            }
+          },
+          "generic_sequential": {
+            "cold_s": 10.182005901000593,
+            "warm_median_s": 10.280258531999607,
+            "median_s": 10.254379766000056,
+            "samples_s": [
+              10.182005901000593,
+              10.07606460199895,
+              10.306137297999157,
+              10.254379766000056,
+              10.324743187000422
+            ],
+            "tracemalloc_peak_median_mb": 1.6544437408447266,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 402,
+            "last": {
+              "skipped": [],
+              "count": 200,
+              "requests": {
+                "list": 1,
+                "get": 200,
+                "put": 200
+              },
+              "request_total": 401,
+              "mode": "sequential",
+              "seconds": 10.324743187000422,
+              "http_requests": {
+                "azure:get": 200,
+                "azure:head": 1,
+                "azure:list": 1,
+                "gcs:put": 200
+              },
+              "http_total": 402
+            }
+          },
+          "generic_parallel_4": {
+            "cold_s": 2.731718205001016,
+            "warm_median_s": 2.767337911499453,
+            "median_s": 2.7475868099991203,
+            "samples_s": [
+              2.731718205001016,
+              2.8734281939996436,
+              2.787089012999786,
+              2.7475868099991203,
+              2.7433867629988526
+            ],
+            "tracemalloc_peak_median_mb": 1.67608642578125,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 402,
+            "last": {
+              "skipped": [],
+              "count": 200,
+              "requests": {
+                "list": 1,
+                "get": 200,
+                "put": 200
+              },
+              "request_total": 401,
+              "mode": "parallel:4",
+              "seconds": 2.7433867629988526,
+              "http_requests": {
+                "azure:get": 200,
+                "azure:head": 1,
+                "azure:list": 1,
+                "gcs:put": 200
+              },
+              "http_total": 402
+            }
+          },
+          "generic_parallel_8": {
+            "cold_s": 1.6706667600010405,
+            "warm_median_s": 1.6866959479993966,
+            "median_s": 1.6706667600010405,
+            "samples_s": [
+              1.6706667600010405,
+              1.7370942550005566,
+              1.7967910560000746,
+              1.6362976409982366,
+              1.6360125289993448
+            ],
+            "tracemalloc_peak_median_mb": 2.461136817932129,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 402,
+            "last": {
+              "skipped": [],
+              "count": 200,
+              "requests": {
+                "list": 1,
+                "get": 200,
+                "put": 200
+              },
+              "request_total": 401,
+              "mode": "parallel:8",
+              "seconds": 1.6360125289993448,
+              "http_requests": {
+                "azure:get": 200,
+                "azure:head": 1,
+                "azure:list": 1,
+                "gcs:put": 200
+              },
+              "http_total": 402
+            }
+          },
+          "generic_parallel_16": {
+            "cold_s": 1.5685041819997423,
+            "warm_median_s": 1.5626196949997393,
+            "median_s": 1.5685041819997423,
+            "samples_s": [
+              1.5685041819997423,
+              1.5389182529997925,
+              1.5478244919995632,
+              1.6123796669999138,
+              1.5774148979999154
+            ],
+            "tracemalloc_peak_median_mb": 2.553304672241211,
+            "rss_max_mb": 596.97265625,
+            "http_total_median": 402,
+            "last": {
+              "skipped": [],
+              "count": 200,
+              "requests": {
+                "list": 1,
+                "get": 200,
+                "put": 200
+              },
+              "request_total": 401,
+              "mode": "parallel:16",
+              "seconds": 1.5774148979999154,
+              "http_requests": {
+                "azure:get": 200,
+                "azure:head": 1,
+                "azure:list": 1,
+                "gcs:put": 200
+              },
+              "http_total": 402
+            }
+          }
+        }
+      }
+    ]
+  }
+}

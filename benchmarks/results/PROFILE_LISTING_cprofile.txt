@@ -1,0 +1,34 @@
+# cProfile: generic_per_key azure->gcs n=1000
+         21267278 function calls (20616395 primitive calls) in 17.324 seconds
+
+   Ordered by: cumulative time
+   List reduced from 1324 to 25 due to restriction <25>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+31953/31952    0.211    0.000   30.988    0.001 /home/box/.local/share/uv/python/cpython-3.12.15-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:1922(_run_once)
+      2/1    0.000    0.000   16.687   16.687 /workspace/airflow-generic-transfer-contract-demo/scripts/profile_listing.py:80(<lambda>)
+      2/1    0.009    0.004   16.683   16.683 /workspace/airflow-generic-transfer-contract-demo/src/generic_transfer/adapters/file_copy.py:140(copy_files_sequential)
+3013/3011    0.019    0.000   13.795    0.005 /workspace/airflow-generic-transfer-contract-demo/.venv/lib/python3.12/site-packages/fsspec/asyn.py:214(wrapper)
+3013/3011    0.053    0.000   13.761    0.005 /workspace/airflow-generic-transfer-contract-demo/.venv/lib/python3.12/site-packages/fsspec/asyn.py:66(sync)
+     1000    0.010    0.000    9.387    0.009 /workspace/airflow-generic-transfer-contract-demo/src/generic_transfer/adapters/file_copy.py:62(_read_object)
+    48347    0.039    0.000    7.750    0.000 /home/box/.local/share/uv/python/cpython-3.12.15-linux-x86_64-gnu/lib/python3.12/asyncio/events.py:86(_run)
+    48347    0.100    0.000    7.706    0.000 {method 'run' of '_contextvars.Context' objects}
+    11105    0.047    0.000    6.371    0.001 /workspace/airflow-generic-transfer-contract-demo/.venv/lib/python3.12/site-packages/fsspec/asyn.py:54(_runner)
+    31951    0.179    0.000    5.571    0.000 /home/box/.local/share/uv/python/cpython-3.12.15-linux-x86_64-gnu/lib/python3.12/selectors.py:451(select)
+25160/11116    0.062    0.000    5.327    0.000 /workspace/airflow-generic-transfer-contract-demo/.venv/lib/python3.12/site-packages/azure/core/tracing/decorator_async.py:101(wrapper_use_tracer)
+     1000    0.008    0.000    4.831    0.005 /workspace/airflow-generic-transfer-contract-demo/.venv/lib/python3.12/site-packages/fsspec/spec.py:1359(open)
+     1000    0.006    0.000    4.766    0.005 /workspace/airflow-generic-transfer-contract-demo/.venv/lib/python3.12/site-packages/adlfs/spec.py:1903(_open)
+     1000    0.021    0.000    4.759    0.005 /workspace/airflow-generic-transfer-contract-demo/.venv/lib/python3.12/site-packages/adlfs/spec.py:1976(__init__)
+     2000    0.014    0.000    4.532    0.002 /workspace/airflow-generic-transfer-contract-demo/.venv/lib/python3.12/site-packages/fsspec/spec.py:2170(read)
+     2000    0.007    0.000    4.510    0.002 /workspace/airflow-generic-transfer-contract-demo/.venv/lib/python3.12/site-packages/fsspec/caching.py:256(_fetch)
+803285/555379    0.122    0.000    4.504    0.000 {built-in method builtins.hasattr}
+     2000    0.004    0.000    4.415    0.002 /workspace/airflow-generic-transfer-contract-demo/.venv/lib/python3.12/site-packages/fsspec/spec.py:2000(details)
+1012/1010    0.004    0.000    4.262    0.004 /workspace/airflow-generic-transfer-contract-demo/src/generic_transfer/adapters/file_sink.py:95(is_folder_marker)
+      2/1    0.000    0.000    4.246    4.246 /workspace/airflow-generic-transfer-contract-demo/src/generic_transfer/adapters/file_copy.py:23(_plan)
+      2/1    0.004    0.002    4.237    4.237 /workspace/airflow-generic-transfer-contract-demo/src/generic_transfer/adapters/file_sink.py:186(_list_transfer_keys_per_key)
+     8090    0.030    0.000    3.891    0.000 /workspace/airflow-generic-transfer-contract-demo/.venv/lib/python3.12/site-packages/adlfs/spec.py:638(_info)
+     1000    0.002    0.000    3.035    0.003 /workspace/airflow-generic-transfer-contract-demo/scripts/profile_listing.py:75(put)
+     1000    0.006    0.000    2.999    0.003 /workspace/airflow-generic-transfer-contract-demo/src/generic_transfer/adapters/emulators.py:329(put_bytes)
+    31951    2.964    0.000    2.964    0.000 {method 'poll' of 'select.epoll' objects}
+
+

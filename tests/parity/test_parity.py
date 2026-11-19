@@ -10,7 +10,7 @@ import requests_mock as rm
 from generic_transfer import GenericRecordTransfer
 from generic_transfer.adapters import FileBatchSink, PaginatedHttpSourceHook
 from generic_transfer.pagination import offset_pagination
-from tests.baseline_httptos3 import HttpToObjectBaseline
+from tests.parity.baseline_httptos3 import HttpToObjectBaseline
 
 
 def _orders_mocks(m: rm.Mocker) -> None:
@@ -88,7 +88,7 @@ def test_generic_matches_paginated_pair_baseline(tmp_path: Path):
 
 
 def test_generic_http_to_file_end_to_end_against_fake_api(tmp_path: Path):
-    from fake_api.server import start
+    from emulators.fake_api.server import start
 
     server, base = start()
     try:
@@ -116,7 +116,7 @@ def test_generic_http_to_file_end_to_end_against_fake_api(tmp_path: Path):
 @pytest.mark.iceberg
 def test_generic_http_to_iceberg(tmp_path: Path):
     pytest.importorskip("pyiceberg")
-    from fake_api.server import start
+    from emulators.fake_api.server import start
     from generic_transfer.adapters import IcebergAppendSink
 
     server, base = start()

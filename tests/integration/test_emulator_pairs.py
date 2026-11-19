@@ -5,9 +5,10 @@ import hashlib
 
 import pytest
 
-from generic_transfer import GenericRecordTransfer
+from generic_transfer import GenericFileTransfer, GenericRecordTransfer
 from generic_transfer.adapters.emulators import (
     EmulatorFS,
+    clear_prefix,
     ensure_bucket,
     get_bytes,
     list_keys_fsspec,
@@ -15,6 +16,7 @@ from generic_transfer.adapters.emulators import (
     make_fs,
     seed_tree_with_markers,
 )
+from generic_transfer.adapters.file_copy import ObjectStoreFileCopyHook
 from generic_transfer.adapters.file_sink import (
     ObjectStoreCopySink,
     is_folder_marker,
@@ -202,3 +204,32 @@ def _generic_copy(
             "source_prefix": source_prefix,
         },
     ).execute()
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_server_side_copy_skips_markers_via_shared_listing(flavour):
+    """Server-side copy uses list_transfer_entries, so markers never appear
+    in ``skipped`` and only the two real files land on the destination.
+    """
+    src = _src(flavour)
+    dst = _dst(flavour)
+    seed_tree_with_markers(src, "data")
+    clear_prefix(dst, "ss-out")
+    result = GenericFileTransfer(
+        destination_hook=ObjectStoreFileCopyHook(dst),
+        copy_params={
+            "source_fs": src.fs,
+            "source_prefix": "data",
+            "source_emu": src,
+            "dest_prefix": "ss-out",
+            "mode": "server_side",
+        },
+    ).execute()
+    assert result["count"] == 2
+    assert result["skipped"] == []
+    native_dst = list_keys_native(dst, "ss-out")
+    assert not any(k.endswith("/") for k in native_dst)
+    assert sorted(native_dst) == ["ss-out/a.json", "ss-out/nested/b.json"]
+    assert get_bytes(dst, "ss-out/a.json") == b'{"id":1}'
+    assert get_bytes(dst, "ss-out/nested/b.json") == b'{"id":2}'
+

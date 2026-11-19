@@ -40,10 +40,14 @@ class DictObjectStore:
         data = self._objects[key]
         return {"name": key, "size": len(data), "type": "file"}
 
-    def find(self, prefix: str = "") -> list[str]:
+    def find(self, prefix: str = "", detail: bool = False) -> Any:
         if not prefix:
-            return sorted(self._objects)
-        return sorted(k for k in self._objects if k == prefix or k.startswith(prefix))
+            keys = sorted(self._objects)
+        else:
+            keys = sorted(k for k in self._objects if k == prefix or k.startswith(prefix))
+        if detail:
+            return {k: self.info(k) for k in keys}
+        return keys
 
     def ls(self, path: str, detail: bool = False) -> list:
         path = path if path.endswith("/") else path + "/"
@@ -123,8 +127,68 @@ def is_folder_marker(fs: Any, key: str, *, prefix: str | None = None) -> bool:
     return len(children) > 0
 
 
+def list_transfer_entries(fs: Any, prefix: str) -> list[dict[str, Any]]:
+    """List objects under ``prefix`` with sizes, skipping folder markers.
+
+    Uses **one** ``find(prefix, detail=True)`` listing and classifies markers
+    from that listing alone (zero bytes and either ``type == "directory"``, a
+    trailing ``/``, or another listed key beneath it). No per-key ``info()``.
+
+    The previous implementation called ``is_folder_marker`` (an ``info()`` /
+    HEAD, plus a ``find`` for zero-byte keys) for every listed key. On real
+    object stores that is one extra round trip per object, and the copy path's
+    ``fs.open()`` then issued a second HEAD. See docs/AZURE_SLOWDOWN.md.
+
+    Returns sorted ``[{"name": ..., "size": ...}]``. Filesystems whose
+    ``find`` does not accept ``detail`` fall back to the per-key rule.
+    """
+    try:
+        found = fs.find(prefix, detail=True)
+    except FileNotFoundError:
+        return []
+    except TypeError:
+        return [
+            {"name": k, "size": None} for k in _list_transfer_keys_per_key(fs, prefix)
+        ]
+    if not isinstance(found, dict):  # defensive: some fakes ignore detail
+        return [
+            {"name": k, "size": None} for k in _list_transfer_keys_per_key(fs, prefix)
+        ]
+    names = sorted(found)
+    out: list[dict[str, Any]] = []
+    for idx, name in enumerate(names):
+        info = found[name] or {}
+        size = info.get("size") or 0
+        if size == 0:
+            if info.get("type") == "directory" or name.endswith("/"):
+                continue
+            child_prefix = name + "/"
+            # names is sorted, so any child sorts after ``name``; scan forward
+            # only while keys still share the ``name`` prefix.
+            has_child = False
+            for other in names[idx + 1 :]:
+                if not other.startswith(name):
+                    break
+                if other.startswith(child_prefix):
+                    has_child = True
+                    break
+            if has_child:
+                continue
+        out.append({"name": name, "size": size})
+    return out
+
+
 def list_transfer_keys(fs: Any, prefix: str) -> list[str]:
-    """List object keys under ``prefix``, skipping folder markers."""
+    """List object keys under ``prefix``, skipping folder markers (one listing)."""
+    return [e["name"] for e in list_transfer_entries(fs, prefix)]
+
+
+def _list_transfer_keys_per_key(fs: Any, prefix: str) -> list[str]:
+    """Pre-06 behaviour: one ``is_folder_marker`` (info/HEAD) per listed key.
+
+    Kept for filesystems without ``find(detail=True)`` and so the bench can
+    show the before/after request counts.
+    """
     try:
         found = list(fs.find(prefix))
     except FileNotFoundError:
@@ -246,8 +310,9 @@ class ObjectStoreCopySink:
     """Copy keys from a source store prefix into a destination DictObjectStore
     or ObjectStoragePath root.
 
-    Skips folder markers via :func:`list_transfer_keys`. This is the file-to-file
-    half of the thesis: one rule, every registered filesystem.
+    Implements ``FileCopyable.copy_files``. ``write_batches`` remains as a
+    thin compatibility wrapper that drains batches then delegates to
+    ``copy_files`` — prefer ``GenericFileTransfer`` for new code.
     """
 
     def __init__(self, destination: Any):
@@ -259,27 +324,68 @@ class ObjectStoreCopySink:
             self.destination = destination
             self._mode = "store"
 
+    def describe_params(self, role: str = "copy") -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "source_fs": {"type": "object"},
+                "source_prefix": {"type": "string"},
+                "dest_prefix": {"type": "string"},
+                "resume_from": {"type": "array"},
+            },
+            "required": ["source_fs", "source_prefix"],
+            "additionalProperties": True,
+        }
+
+    def get_lineage_datasets(self, **params: Any) -> list[Any]:
+        prefix = params.get("dest_prefix") or params.get("source_prefix") or ""
+        return [{"uri": f"object://destination/{prefix}", "role": "outlet"}]
+
+    def copy_files(
+        self,
+        *,
+        source_fs: Any,
+        source_prefix: str = "",
+        dest_prefix: str = "",
+        resume_from: list[str] | None = None,
+        **_: Any,
+    ) -> dict[str, Any]:
+        keys = list_transfer_keys(source_fs, source_prefix)
+        resume = set(resume_from or [])
+        copied: list[str] = []
+        skipped: list[str] = []
+        for key in keys:
+            rel = (
+                key[len(source_prefix) :].lstrip("/")
+                if source_prefix and key.startswith(source_prefix)
+                else key
+            )
+            out_key = f"{dest_prefix.rstrip('/')}/{rel}" if dest_prefix else rel
+            if out_key in resume or rel in resume:
+                skipped.append(out_key)
+                continue
+            with source_fs.open(key, "rb") as rf:
+                data = rf.read()
+            if self._mode == "store":
+                self.destination.put(out_key, data)
+            else:
+                self.destination.joinpath(out_key).write_bytes(data)
+            copied.append(out_key)
+        return {"copied": copied, "skipped": skipped, "count": len(copied)}
+
     def write_batches(
         self,
         batches: Iterator[list[dict[str, Any]]],
         *,
         source_fs: Any | None = None,
         source_prefix: str = "",
-        **_: Any,
+        **params: Any,
     ) -> dict[str, Any]:
+        """Compatibility shim: drain record batches, then ``copy_files``."""
         for _ in batches:
             pass
         if source_fs is None:
             raise ValueError("source_fs is required for object-store copy")
-        keys = list_transfer_keys(source_fs, source_prefix)
-        copied: list[str] = []
-        for key in keys:
-            rel = key[len(source_prefix) :].lstrip("/") if source_prefix and key.startswith(source_prefix) else key
-            with source_fs.open(key, "rb") as rf:
-                data = rf.read()
-            if self._mode == "store":
-                self.destination.put(rel, data)
-            else:
-                self.destination.joinpath(rel).write_bytes(data)
-            copied.append(rel)
-        return {"copied": copied, "count": len(copied)}
+        return self.copy_files(
+            source_fs=source_fs, source_prefix=source_prefix, **params
+        )
