@@ -55,7 +55,7 @@ The proposed unit test (same assertion as `--before-after`) lives in
 `test_replace_false_filter.py`. The local fix is
 `s3_to_wasb_replace_false.patch` (do not apply to this demo's tree). A
 paste-ready GitHub issue draft is `ISSUE.md`. The issue is filed:
-https://github.com/apache/airflow/issues/76880 (open, by aoelvp94).
+https://github.com/apache/airflow/issues/76880.
 
 
 ## Observed results (this run)

@@ -2,7 +2,6 @@
 
 - Rows: **1000000** | batch_size: **50000** | rounds: **3**
 - Captured (UTC): `2026-11-19T10:20:44.974360+00:00`
-- Host: `Intel(R) Xeon(R) Processor` x4, 15.6 GiB RAM, `Linux-6.12.113+-x86_64-with-glibc2.39`, Python `3.12.3`
 - Peak RSS source: `VmHWM` (child process, `/proc/self/status` VmHWM; `ru_maxrss` where /proc is absent). Before is the mark after imports and before the transfer; after is the mark when the transfer returns. Medians are over the rounds.
 
 | Path | Median (s) | RSS before MB | RSS peak MB | Records (last) |

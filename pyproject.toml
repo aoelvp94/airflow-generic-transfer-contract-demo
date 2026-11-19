@@ -40,5 +40,5 @@ markers = [
   "iceberg: needs pyiceberg optional extra",
   "integration: needs object-store emulators (just up)",
   "adbc: needs adbc-driver-sqlite optional extra",
-  "local: sqlite or local files; does not need Docker or object-store emulators",
+  "local: sqlite or local files; does not need the object-store emulators",
 ]

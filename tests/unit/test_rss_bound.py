@@ -1,6 +1,6 @@
 """Peak RSS of the record path tracks batch size, not row count.
 
-Local SQLite only. No object-store emulator and no Docker. The measurement
+Local SQLite only. No object-store emulator. The measurement
 runs in a child process so VmHWM starts clean.
 """
 from __future__ import annotations

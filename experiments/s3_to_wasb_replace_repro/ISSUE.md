@@ -1,6 +1,6 @@
 # S3ToAzureBlobStorageOperator replace=False does not skip existing blobs under blob_prefix
 
-Filed: https://github.com/apache/airflow/issues/76880 (open, by aoelvp94).
+Filed: https://github.com/apache/airflow/issues/76880.
 
 The text below is the draft that was prepared for that report. Labels from the
 template: `kind:bug`, `needs-triage`.
@@ -107,12 +107,10 @@ Not Applicable
 
 Reproduced every time with `s3_prefix` + `blob_prefix` and a dest blob already at `{blob_prefix}/{relative}`. The `s3_key` + `blob_name` path compares basenames and is a separate case; this report is about the prefix listing path.
 
-This comparison bug is tracked at https://github.com/apache/airflow/issues/76880 (open, filed by aoelvp94). Closest related work (folder markers, TLS), not this filter:
+This comparison bug is tracked at https://github.com/apache/airflow/issues/76880. Closest related work (folder markers, TLS), not this filter:
 
 - https://github.com/apache/airflow/pull/76408
 - https://github.com/apache/airflow/pull/76222
-
-**AI assistance:** This investigation and draft were prepared with assistance from a coding agent (Grok Bot). A follow-up pull request, if submitted, will include the project's Gen-AI disclosure in the PR description as required by [contributing-docs/05_pull_requests.rst](https://github.com/apache/airflow/blob/main/contributing-docs/05_pull_requests.rst#gen-ai-assisted-contributions) (`Generated-by` in the PR template). The issue form itself has no AI-disclosure field.
 
 ## Are you willing to submit PR?
 
