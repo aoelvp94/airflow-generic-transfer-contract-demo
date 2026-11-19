@@ -1,18 +1,18 @@
 # One-command targets for reviewers.
-# Emulators: scripts/emulators.sh -> emulators/emulators.sh. Auto-detects DOCKER_HOST.
+# Emulators: emulators/emulators.sh. Auto-detects DOCKER_HOST.
 
 install:
     uv venv .venv
     uv pip install -e '.[dev,iceberg,emulators,adbc]'
 
 up:
-    ./scripts/emulators.sh up
+    ./emulators/emulators.sh up
 
 down:
-    ./scripts/emulators.sh down
+    ./emulators/emulators.sh down
 
 status:
-    ./scripts/emulators.sh status
+    ./emulators/emulators.sh status
 
 test:
     .venv/bin/pytest -v -m 'not integration'
@@ -24,43 +24,43 @@ test-all:
     .venv/bin/pytest -v
 
 bench:
-    .venv/bin/python scripts/bench.py
+    .venv/bin/python benchmarks/bench.py
 
 bench-emulators:
-    .venv/bin/python scripts/bench_emulators.py --rounds 5
+    .venv/bin/python benchmarks/bench_emulators.py --rounds 5
 
 bench-scale:
-    .venv/bin/python scripts/bench_scale.py --rounds 5
+    .venv/bin/python benchmarks/bench_scale.py --rounds 5
 
 bench-scale-quick:
-    .venv/bin/python scripts/bench_scale.py --quick --rounds 3
+    .venv/bin/python benchmarks/bench_scale.py --quick --rounds 3
 
 # Restart emulators first: S3Mock slows down as objects accumulate (see docs/AZURE_SLOWDOWN.md).
 bench-scale-fresh:
-    ./scripts/emulators.sh down
-    ./scripts/emulators.sh up
-    .venv/bin/python scripts/bench_scale.py --rounds 5
+    ./emulators/emulators.sh down
+    ./emulators/emulators.sh up
+    .venv/bin/python benchmarks/bench_scale.py --rounds 5
 
 profile-listing:
-    .venv/bin/python scripts/profile_listing.py --n 1000 --rounds 3 --cprofile
+    .venv/bin/python benchmarks/profile_listing.py --n 1000 --rounds 3 --cprofile
 
 probe-emulators:
-    ./scripts/emulators.sh down
-    ./scripts/emulators.sh up
-    .venv/bin/python scripts/probe_emulator_degradation.py --no-cleanup
-    ./scripts/emulators.sh down
-    ./scripts/emulators.sh up
+    ./emulators/emulators.sh down
+    ./emulators/emulators.sh up
+    .venv/bin/python benchmarks/probe_emulator_degradation.py --no-cleanup
+    ./emulators/emulators.sh down
+    ./emulators/emulators.sh up
 
 bench-adbc:
-    .venv/bin/python scripts/bench_adbc.py --rows 1000000 --rounds 3
+    .venv/bin/python benchmarks/bench_adbc.py --rows 1000000 --rounds 3
 
 # Pair-mapping audit of apache/airflow transfer operators (no emulators).
 # Requires a clone at $AIRFLOW_SRC or /workspace/airflow-src (providers/ is enough).
 audit:
-    .venv/bin/python scripts/audit_transfers.py
+    .venv/bin/python audits/audit_transfers.py
 
 rank-capabilities:
-    .venv/bin/python scripts/rank_capabilities.py
+    .venv/bin/python audits/rank_capabilities.py
 
 # Run unmodified upstream GCSToGCSOperator unit tests against the file-contract shim.
 # Uses a dedicated venv under shims/gcs_to_gcs_shim/.venv (not the demo venv).

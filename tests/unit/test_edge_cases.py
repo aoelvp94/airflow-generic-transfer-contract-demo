@@ -16,6 +16,35 @@ from generic_transfer.pagination import cursor_pagination, offset_pagination, pa
 from emulators.fake_api.server import start
 
 
+def test_file_batch_sink_appends_ndjson_per_batch(tmp_path: Path):
+    from generic_transfer.adapters.file_sink import FileBatchSink, load_records
+
+    sink = FileBatchSink(str(tmp_path))
+    result = sink.write_batches(
+        iter([[{"id": 1}], [{"id": 2}, {"id": 3}]]),
+        key="raw/out.json",
+    )
+    text = (tmp_path / "raw/out.json").read_text()
+    assert text == '{"id": 1}\n{"id": 2}\n{"id": 3}\n'
+    assert result["records"] == 3
+    assert result["batches"] == 2
+    assert result["content_type"] == "ndjson"
+    assert load_records(tmp_path / "raw/out.json") == [{"id": 1}, {"id": 2}, {"id": 3}]
+    assert sink.read_records(key="raw/out.json") == [{"id": 1}, {"id": 2}, {"id": 3}]
+
+
+def test_file_batch_sink_json_array_still_readable(tmp_path: Path):
+    from generic_transfer.adapters.file_sink import FileBatchSink, load_records
+
+    sink = FileBatchSink(str(tmp_path))
+    sink.write_batches(
+        iter([[{"id": 1}], [{"id": 2}]]),
+        key="raw/out.json",
+        content_type="json_array",
+    )
+    assert load_records(tmp_path / "raw/out.json") == [{"id": 1}, {"id": 2}]
+
+
 def test_empty_prefix_lists_nothing():
     store = DictObjectStore()
     assert list_transfer_keys(store, "missing") == []

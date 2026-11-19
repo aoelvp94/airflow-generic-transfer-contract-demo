@@ -1,51 +1,95 @@
 {
-  "timestamp_utc": "2026-11-09T22:59:49.549476+00:00",
+  "timestamp_utc": "2026-11-19T10:20:44.974360+00:00",
+  "host": {
+    "platform": "Linux-6.12.113+-x86_64-with-glibc2.39",
+    "python": "3.12.3",
+    "cpu_model": "Intel(R) Xeon(R) Processor",
+    "cpu_count": 4,
+    "mem_total_gb": 15.6
+  },
   "rows": 1000000,
   "batch_size": 50000,
   "rounds": 3,
+  "rss_source": "VmHWM",
   "batch_format_source": "record_batch",
   "batch_format_sink": "record_batch",
   "results": [
     {
       "name": "arrow_adbc_e2e",
-      "median_s": 0.5748741419999988,
+      "median_s": 0.5428124899999602,
       "samples_s": [
-        0.6366497770000024,
-        0.5733749009999656,
-        0.5748741419999988
+        0.5428124899999602,
+        0.5311289579999539,
+        0.5456465239999488
       ],
-      "peak_mb_median": 0.24001121520996094,
+      "rss_before_mb_median": 79.74609375,
+      "rss_peak_mb_median": 94.49609375,
+      "rss_before_mb": [
+        79.74609375,
+        79.7890625,
+        79.6875
+      ],
+      "rss_peak_mb": [
+        94.49609375,
+        94.5390625,
+        94.44140625
+      ],
+      "rss_source": "VmHWM",
       "last": {
-        "table": "dst",
         "records": 1000000,
-        "batches": 977,
-        "mode": "create"
+        "batches": 20
       }
     },
     {
       "name": "arrow_to_rows_then_sink",
-      "median_s": 2.9117838739999797,
+      "median_s": 0.5491860909999104,
       "samples_s": [
-        3.4669192679999696,
-        2.9117838739999797,
-        2.8697261199999957
+        0.629824138999993,
+        0.5491860909999104,
+        0.5069764849999956
       ],
-      "peak_mb_median": 244.92062759399414,
+      "rss_before_mb_median": 79.80859375,
+      "rss_peak_mb_median": 344.140625,
+      "rss_before_mb": [
+        79.80859375,
+        79.84375,
+        79.73046875
+      ],
+      "rss_peak_mb": [
+        344.140625,
+        344.17578125,
+        344.07421875
+      ],
+      "rss_source": "VmHWM",
       "last": {
-        "records": 1000000
+        "records": 1000000,
+        "batches": null
       }
     },
     {
       "name": "pure_rows_200000",
-      "median_s": 0.004445051999994121,
+      "median_s": 0.044653495999909865,
       "samples_s": [
-        0.00823742500000435,
-        0.004445051999994121,
-        0.003903376000039316
+        0.05191393999984939,
+        0.044653495999909865,
+        0.04415659999995114
       ],
-      "peak_mb_median": 2.2904090881347656,
+      "rss_before_mb_median": 79.73828125,
+      "rss_peak_mb_median": 132.98046875,
+      "rss_before_mb": [
+        79.73828125,
+        79.78515625,
+        79.73828125
+      ],
+      "rss_peak_mb": [
+        132.94921875,
+        133.0234375,
+        132.98046875
+      ],
+      "rss_source": "VmHWM",
       "last": {
-        "records": 200000
+        "records": 200000,
+        "batches": null
       }
     }
   ],

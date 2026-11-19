@@ -21,6 +21,8 @@ Notes discovered while wiring the emulators (see README findings table):
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -250,6 +252,203 @@ def _native_client(emu: EmulatorFS):
             )
         return _client_cache[key]
     raise ValueError(emu.flavour)
+
+
+# S3 rejects every multipart part except the last when it is under 5 MiB.
+_S3_MIN_PART = 5 * 1024 * 1024
+
+
+class _UploadSink:
+    """Writable sink that uploads one object without holding it all.
+
+    A single ``write_all`` (the ``cat_file`` path for a known-small object) is
+    one ``put_bytes``. Streamed ``write`` calls stay in a buffer until
+    ``chunk_size`` (or 5 MiB on S3) and then flush to a multipart / block /
+    resumable upload. ``close`` sends a short tail with one PUT when the
+    object never grew past that threshold.
+    """
+
+    def __init__(self, emu: EmulatorFS, key: str, *, chunk_size: int) -> None:
+        self.emu = emu
+        self.key = key.lstrip("/")
+        self.chunk_size = max(1, int(chunk_size))
+        self._promote_at = self.chunk_size
+        if emu.flavour == "s3":
+            self._promote_at = max(self.chunk_size, _S3_MIN_PART)
+        self._pending = bytearray()
+        self._oneshot: bytes | None = None
+        self._stream: Any = None
+        self._closed = False
+
+    def write_all(self, data: bytes) -> None:
+        self._oneshot = bytes(data)
+
+    def write(self, data: bytes) -> int:
+        if not data:
+            return 0
+        if self._stream is not None:
+            self._stream.write(data)
+            return len(data)
+        self._pending.extend(data)
+        if len(self._pending) >= self._promote_at:
+            self._start_stream()
+        return len(data)
+
+    def _start_stream(self) -> None:
+        pending = bytes(self._pending)
+        self._pending.clear()
+        client = _native_client(self.emu)
+        if self.emu.flavour == "s3":
+            self._stream = _S3Multipart(client, self.emu.bucket, self.key, self._promote_at)
+        elif self.emu.flavour == "gcs":
+            self._stream = _GcsStream(client, self.emu.bucket, self.key, self.chunk_size)
+        elif self.emu.flavour == "azure":
+            self._stream = _AzureBlockStream(client, self.emu.bucket, self.key)
+        else:
+            raise ValueError(self.emu.flavour)
+        if pending:
+            self._stream.write(pending)
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        if self._oneshot is not None:
+            put_bytes(self.emu, self.key, self._oneshot)
+            return
+        if self._stream is None:
+            put_bytes(self.emu, self.key, bytes(self._pending))
+            self._pending.clear()
+            return
+        if self._pending:
+            self._stream.write(bytes(self._pending))
+            self._pending.clear()
+        self._stream.close()
+
+    def abort(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        stream = self._stream
+        self._stream = None
+        if stream is not None:
+            stream.abort()
+
+
+class _S3Multipart:
+    def __init__(self, client: Any, bucket: str, key: str, part_size: int) -> None:
+        self._client = client
+        self._bucket = bucket
+        self._key = key
+        self._part_size = part_size
+        self._buf = bytearray()
+        resp = client.create_multipart_upload(Bucket=bucket, Key=key)
+        self._uid = resp["UploadId"]
+        self._parts: list[dict[str, Any]] = []
+        self._n = 1
+        self._done = False
+
+    def write(self, data: bytes) -> None:
+        self._buf.extend(data)
+        while len(self._buf) >= self._part_size:
+            self._upload(self._part_size)
+
+    def _upload(self, n: int) -> None:
+        body = bytes(self._buf[:n])
+        del self._buf[:n]
+        resp = self._client.upload_part(
+            Bucket=self._bucket,
+            Key=self._key,
+            UploadId=self._uid,
+            PartNumber=self._n,
+            Body=body,
+        )
+        self._parts.append({"ETag": resp["ETag"], "PartNumber": self._n})
+        self._n += 1
+
+    def close(self) -> None:
+        if self._buf:
+            self._upload(len(self._buf))
+        self._client.complete_multipart_upload(
+            Bucket=self._bucket,
+            Key=self._key,
+            UploadId=self._uid,
+            MultipartUpload={"Parts": self._parts},
+        )
+        self._done = True
+
+    def abort(self) -> None:
+        if self._done:
+            return
+        self._client.abort_multipart_upload(Bucket=self._bucket, Key=self._key, UploadId=self._uid)
+        self._done = True
+
+
+class _GcsStream:
+    def __init__(self, client: Any, bucket: str, key: str, chunk_size: int) -> None:
+        blob = client.bucket(bucket).blob(key)
+        # Resumable chunks must be a multiple of 256 KiB.
+        step = max(256 * 1024, int(chunk_size))
+        step = ((step + 256 * 1024 - 1) // (256 * 1024)) * (256 * 1024)
+        blob.chunk_size = step
+        self._fh = blob.open("wb", chunk_size=step)
+        self._done = False
+
+    def write(self, data: bytes) -> None:
+        self._fh.write(data)
+
+    def close(self) -> None:
+        self._fh.close()
+        self._done = True
+
+    def abort(self) -> None:
+        if self._done:
+            return
+        # close() would finalize the resumable upload and leave a partial
+        # object. terminate() cancels the session instead.
+        self._done = True
+        self._fh.terminate()
+
+
+class _AzureBlockStream:
+    def __init__(self, client: Any, container: str, key: str) -> None:
+        self._blob = client.get_blob_client(container, key)
+        self._ids: list[str] = []
+        self._done = False
+
+    def write(self, data: bytes) -> None:
+        if not data:
+            return
+        import base64
+
+        block_id = base64.b64encode(f"{len(self._ids):08d}".encode()).decode()
+        self._blob.stage_block(block_id=block_id, data=data, length=len(data))
+        self._ids.append(block_id)
+
+    def close(self) -> None:
+        from azure.storage.blob import BlobBlock
+
+        if not self._ids:
+            self._blob.upload_blob(b"", overwrite=True)
+        else:
+            self._blob.commit_block_list([BlobBlock(block_id=bid) for bid in self._ids])
+        self._done = True
+
+    def abort(self) -> None:
+        self._done = True
+
+
+@contextmanager
+def open_upload(emu: EmulatorFS, key: str, *, chunk_size: int = 1024 * 1024) -> Iterator[_UploadSink]:
+    """Context manager yielding a writer that uploads ``key`` in chunks."""
+    sink = _UploadSink(emu, key, chunk_size=chunk_size)
+    try:
+        yield sink
+    except BaseException:
+        sink.abort()
+        raise
+    else:
+        sink.close()
 
 
 def put_bytes(emu: EmulatorFS, key: str, data: bytes) -> str:

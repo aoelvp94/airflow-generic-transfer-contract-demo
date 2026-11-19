@@ -1,1 +1,0 @@
-../emulators/emulators.sh

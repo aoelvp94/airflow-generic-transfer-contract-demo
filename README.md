@@ -9,15 +9,15 @@ that shape for the Apache Airflow dev@ thread
 [DISCUSS] One transfer operator on hook contracts instead of one operator per
 source/destination pair
 ([thread](https://lists.apache.org/thread/5nl6g6oosr5sg69nrfy151fwy5b6j5zf),
-[Aldo Villarreal's reply](https://lists.apache.org/thread/2f26z6sznm9tr5hzsmlq2wp3m09qx0ko)).
+[Aldo Escobar's reply](https://lists.apache.org/thread/2f26z6sznm9tr5hzsmlq2wp3m09qx0ko)).
 It does not install Airflow. It uses an in-process fake HTTP API and local
 object-store emulators. Apache-2.0. English throughout.
 
 ## Quick start
 
-Requires Python 3.10+ and [uv](https://docs.astral.sh/uv/). Docker Compose v2
-is required only for the emulator tests and file benches. `just` and `make`
-expose the same targets (`Makefile` mirrors `justfile`).
+Requires Python 3.10+ and [uv](https://docs.astral.sh/uv/). The object-store
+emulators (`just up`) are needed only for the `integration` tests and the file
+benches. `just` is the task runner (`justfile`).
 
 ```bash
 uv venv .venv
@@ -27,10 +27,10 @@ uv pip install -e '.[dev,iceberg,emulators,adbc]'
 .venv/bin/pytest -v -m 'not integration'
 
 # Object-store emulators: Adobe S3Mock, fake-gcs-server, Azurite.
-./scripts/emulators.sh up          # or: just up
+./emulators/emulators.sh up          # or: just up
 .venv/bin/pytest -v -m integration
-.venv/bin/python scripts/bench.py  # pagination: 10/25 vs 25/25
-./scripts/emulators.sh down
+.venv/bin/python benchmarks/bench.py  # pagination: 10/25 vs 25/25
+./emulators/emulators.sh down
 ```
 
 Other targets: `just bench-emulators`, `just bench-scale` (full 100 MiB / 1000
@@ -54,7 +54,7 @@ string: it contains `;`.
 
 ## Repo map
 
-Commands under `scripts/` are symlinks. The implementation sits next to the
+`just` recipes call the implementation directly. Each driver sits next to the
 output it writes, so a maintainer can open one directory and see both.
 
 ```
@@ -80,7 +80,7 @@ docs/                     narrative write-ups (index: docs/README.md)
 emulators/                compose file, env, lifecycle script, fake HTTP API
 shims/                    Airflow file-contract shims (GCS, S3, Azure, 9 pairs)
 experiments/              S3ToAzureBlobStorageOperator replace=False repro
-scripts/                  just/make entry points (symlinks to the above)
+examples/                 TaskFlow-shaped hook usage (no scheduler required)
 ```
 
 Public names are re-exported from the package root:
@@ -149,14 +149,13 @@ conformance suite. The failing cell is the `replace=False` comparison
 reproduced under `experiments/s3_to_wasb_replace_repro/`: the operator
 subtracts full dest blob names from relative source names, so an existing
 `out/a.txt` is not recognized as the image of `pre/a.txt`. The patch in that
-directory is local; it was not applied upstream and the issue was not filed.
+directory is local; it was not applied upstream. The report is
+[apache/airflow#76880](https://github.com/apache/airflow/issues/76880).
 
 ### Scale bench
 
 `benchmarks/results/BENCH_SCALE.md`. Captured 2026-11-10T07:30:59Z, wall clock
-62.5 min. Host: `Intel(R) Xeon(R) Processor` x8, 15.6 GiB RAM,
-`Linux-6.12.113+-x86_64-with-glibc2.41`, Python 3.12.15, Docker 29.1.4.
-Emulators: the three images in the table above. 5 rounds. Small objects are
+62.5 min. Emulators: the three images in the table above. 5 rounds. Small objects are
 1000 × 4 KiB. The large object is 100 MiB. `wire_latency` injects 20 ms
 before every HTTP request, 200 objects. Warm median is rounds 1..N-1; max is
 the slowest round.
@@ -192,12 +191,24 @@ On the 100 MiB object, `azure->s3` naive max is 40.479 s (one stalled round;
 warm median 2.198 s). Generic sequential on that pair stayed at warm median
 1.458 s, max 1.708 s.
 
-Arrow/ADBC fit check (`benchmarks/results/BENCH_ADBC.md`, 1,000,000 rows,
-batch 50,000, 3 rounds): Arrow end-to-end median 0.575 s (tracemalloc peak
-0.2 MB); Arrow coerced to rows then sunk median 2.912 s (peak 244.9 MB).
-Protocols accept `Any` batches. `AdbcSqliteSource.batch_format` is
-`record_batch`. `GenericRecordTransfer` streams the batches without knowing
-Arrow.
+`bench_scale.py` now reports peak RSS as `VmHWM` from a child process per
+run. The committed `BENCH_SCALE.md` predates that change, so its Peak MB
+column is still the tracemalloc figure (Python allocations only). The timings
+and request counts above are unaffected.
+
+Arrow/ADBC fit check (`benchmarks/results/BENCH_ADBC.md`). 1,000,000 rows,
+batch size 50,000, 3 rounds. Peak RSS is `VmHWM` from `/proc/self/status`
+in a fresh child process. Medians: Arrow end-to-end 0.543 s, VmHWM 79.7 MB
+before the transfer and 94.5 MB after. Arrow coerced to rows then sunk
+0.549 s, VmHWM 79.8 MB before and 344.1 MB after. Protocols accept `Any`
+batches. `AdbcSqliteSource.batch_format` is `record_batch`.
+`GenericRecordTransfer` streams the batches without knowing Arrow.
+
+A local check (`tests/unit/test_rss_bound.py`, marker `local`, no emulators)
+runs that Arrow path at 40,000 and 160,000 rows (1,024-byte values, batch
+size 2,000), one child process each, and asserts that peak RSS at 160,000
+rows stays under 1.5x the peak at 40,000. Peak RSS tracks the batch size,
+not the row count.
 
 ## Caveats
 
@@ -232,9 +243,10 @@ Arrow.
   ([docs/first-wave-exclusions.md](docs/first-wave-exclusions.md)).
 - The separate Arrow/ADBC GenericTransfer proposal. `adapters/adbc_io.py` is
   a fit check on the existing batch protocol.
-- Filing or merging the `replace=False` fix. The repro, the local patch, and
-  a paste-ready issue draft live under
-  `experiments/s3_to_wasb_replace_repro/` and stop there.
+- Merging the `replace=False` fix. The report is
+  [apache/airflow#76880](https://github.com/apache/airflow/issues/76880).
+  The repro, the local patch, and the issue draft
+  live under `experiments/s3_to_wasb_replace_repro/`.
 - Real cloud accounts, IAM, regions, or throughput claims.
 
 ## How this could map upstream
@@ -260,6 +272,33 @@ A plausible landing, matching the split already in this tree:
    hook calls. The emulator bench is the concrete case: six pairs, one
    `list_transfer_keys`, naive copies the marker and the generic path does
    not.
+
+## Hooks inside a TaskFlow task
+
+The operator is optional. A task can call the hooks directly:
+`destination.write_batches(source.read_batches(...))`. The same transfer
+through `GenericRecordTransfer` is the comparison. Both bodies live in
+`examples/taskflow_transfer.py` and run without a scheduler; the unit test
+`tests/unit/test_taskflow_helper.py` calls them that way.
+
+Airflow 3 (including 3.4) decorates the function with `@task` from
+`airflow.sdk`. Airflow 2.4 through 2.10 imports `task` from
+`airflow.decorators`. `airflow_tasks()` in that module picks whichever is
+installed.
+
+```python
+from airflow.sdk import task  # Airflow 2.4–2.10: airflow.decorators.task
+
+from examples.taskflow_transfer import copy_orders, copy_orders_with_operator
+
+copy_orders = task(copy_orders)
+copy_orders_with_operator = task(copy_orders_with_operator)
+```
+
+`copy_orders` builds a `PaginatedHttpSourceHook` and a `FileBatchSink` inside
+the task and returns `destination.write_batches(source.read_batches(...))`.
+`copy_orders_with_operator` passes those same hooks to
+`GenericRecordTransfer`.
 
 ## License
 

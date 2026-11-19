@@ -91,6 +91,41 @@ def test_copy_small_objects_use_cat_file_not_open():
     assert fs.calls["cat_file"] == 3
 
 
+def test_open_writer_gets_chunks_instead_of_one_buffer(monkeypatch):
+    """Large objects are piped chunk by chunk. The writer never sees the whole object."""
+    import generic_transfer.adapters.file_copy as fc
+
+    monkeypatch.setattr(fc, "SMALL_OBJECT_MAX_BYTES", 1)
+    fs = CountingFS(_tree())
+    seen: dict[str, list[bytes]] = {}
+
+    class _Writer:
+        def __init__(self, key: str) -> None:
+            self.key = key
+            seen[key] = []
+
+        def write(self, data: bytes) -> int:
+            seen[self.key].append(bytes(data))
+            return len(data)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    res = copy_files_sequential(
+        source_fs=fs,
+        source_prefix="data",
+        open_writer=lambda key: _Writer(key),
+        chunk_size=1,
+    )
+    assert res["count"] == 4
+    assert seen["nested/b.json"] == [b"b", b"b"]
+    assert b"".join(seen["a.json"]) == b"a"
+    assert seen["empty.txt"] == []
+
+
 def test_large_object_streams_through_open(monkeypatch):
     import generic_transfer.adapters.file_copy as fc
 

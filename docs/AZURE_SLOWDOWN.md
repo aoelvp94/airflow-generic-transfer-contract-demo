@@ -65,8 +65,11 @@ and a cProfile of the old path. Snapshots: `benchmarks/results/PROFILE_LISTING.m
 * `_read_object`: when the listing says the object is <= 8 MiB, use one
   `cat_file` GET. s3fs `cat_file` issues a size HEAD when
   `max_concurrency > 1`, so pass `max_concurrency=1` where supported. A
-  0-byte real file costs no request. Larger objects still stream via
-  `fs.open()` (one HEAD + ranged GETs).
+  0-byte real file costs no request. Larger objects are read from
+  `fs.open()` (one HEAD + ranged GETs) in `chunk_size` pieces and written
+  as they are read. The copy does not assemble the object in one `bytes`
+  value. S3 multipart parts are at least 5 MiB, so that path's buffer is
+  `max(chunk_size, 5 MiB)` per worker.
 * `listing="per_key"` keeps the old path for before/after comparison.
 * Bench fixes: naive reuses cached clients; native HTTP pools widened to 32
   (default 10 is below 16 workers); destination prefixes are wiped after each

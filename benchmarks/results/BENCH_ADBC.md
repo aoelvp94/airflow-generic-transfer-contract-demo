@@ -1,13 +1,14 @@
 # ADBC / Arrow fit bench
 
 - Rows: **1000000** | batch_size: **50000** | rounds: **3**
-- Captured (UTC): `2026-11-09T22:59:49.549476+00:00`
+- Captured (UTC): `2026-11-19T10:20:44.974360+00:00`
+- Peak RSS source: `VmHWM` (child process, `/proc/self/status` VmHWM; `ru_maxrss` where /proc is absent). Before is the mark after imports and before the transfer; after is the mark when the transfer returns. Medians are over the rounds.
 
-| Path | Median (s) | Peak MB (tracemalloc med) | Records (last) |
-|---|---:|---:|---:|
-| `arrow_adbc_e2e` | 0.575 | 0.2 | 1000000 |
-| `arrow_to_rows_then_sink` | 2.912 | 244.9 | 1000000 |
-| `pure_rows_200000` | 0.004 | 2.3 | 200000 |
+| Path | Median (s) | RSS before MB | RSS peak MB | Records (last) |
+|---|---:|---:|---:|---:|
+| `arrow_adbc_e2e` | 0.543 | 79.7 | 94.5 | 1000000 |
+| `arrow_to_rows_then_sink` | 0.549 | 79.8 | 344.1 | 1000000 |
+| `pure_rows_200000` | 0.045 | 79.7 | 133.0 | 200000 |
 
 ## Does the contract fit?
 

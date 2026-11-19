@@ -19,10 +19,13 @@ Modes per pair
 * ``generic_sequential``          generic copier, single listing, ``cat_file``
 * ``generic_parallel_{w}``        same, bounded thread pool of ``w`` workers
 
-Every timed run records cold (round 0) and warm median, tracemalloc peak and
-two request counts: ``logical`` (what the code thinks it did: list/get/put)
-and ``http`` (real requests on the wire, counted at the aiohttp / urllib3
-transport, see ``generic_transfer.wire``).
+Every timed run records cold (round 0) and warm median, and peak RSS of a
+fresh child process (``VmHWM`` from ``/proc/self/status``; ``ru_maxrss`` on
+macOS, labelled in the snapshot). Two request counts are recorded:
+``logical`` (what the code thinks it did: list/get/put) and ``http`` (real
+requests on the wire, counted at the aiohttp / urllib3 transport, see
+``generic_transfer.wire``). The copy runs in the child; the parent only
+wipes the destination prefix afterwards.
 
 Destination prefixes are wiped after every round (outside the timed region) so
 emulator object counts stay bounded; see benchmarks/results/EMULATOR_DEGRADATION.md for
@@ -37,12 +40,10 @@ import argparse
 import json
 import os
 import platform
-import resource
 import statistics
 import subprocess
 import sys
 import time
-import tracemalloc
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -53,10 +54,6 @@ sys.path.insert(0, str(ROOT))
 
 SRC_BUCKET = {"s3": "src-bucket", "gcs": "src-bucket", "azure": "src-container"}
 DST_BUCKET = {"s3": "dst-bucket", "gcs": "dst-bucket", "azure": "dst-container"}
-
-
-def _rss_mb() -> float:
-    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0
 
 
 def main() -> int:
@@ -273,38 +270,117 @@ def _wipe(emu, prefix: str) -> None:
         list(pool.map(fn, keys))
 
 
-def _timed(fn, rounds: int, *, latency_ms: float = 0.0) -> dict:
-    """Run ``fn(round_i)`` ``rounds`` times.
+def measure_job(job: dict) -> dict:
+    """Child entry. Run one copy and report VmHWM before and after it.
 
-    ``fn`` returns ``(payload, cleanup)``; cleanup runs after timing and after
-    latency injection is switched off.
+    Imports and filesystem clients are built before the before-mark so the
+    delta is the copy, not interpreter startup. Absolute peak still includes
+    those imports: VmHWM never goes down.
     """
     from generic_transfer import wire
+    from generic_transfer.adapters.emulators import load_emulator_env, make_fs
+    from generic_transfer.rss import read_peak_rss
 
-    samples, peaks, rss, http_totals = [], [], [], []
-    last = {}
-    for round_i in range(rounds):
-        wire.reset()
-        wire.set_latency_ms(latency_ms)
-        tracemalloc.start()
-        t0 = time.perf_counter()
+    os.environ.setdefault("STORAGE_EMULATOR_HOST", "http://127.0.0.1:14443")
+    load_emulator_env()
+    wire.install()
+    wire.reset()
+    wire.set_latency_ms(float(job.get("latency_ms") or 0.0))
+    src = make_fs(job["src_fl"], bucket=SRC_BUCKET[job["src_fl"]])
+    dst = make_fs(job["dst_fl"], bucket=DST_BUCKET[job["dst_fl"]])
+    before, label = read_peak_rss()
+    t0 = time.perf_counter()
+    try:
+        payload = _run_job(job, src, dst)
+    finally:
+        elapsed = time.perf_counter() - t0
+        wire.set_latency_ms(0)
+    http = wire.snapshot()
+    peak, label = read_peak_rss()
+    payload = {k: v for k, v in payload.items() if k != "copied"}
+    payload["seconds"] = elapsed
+    payload["http_requests"] = http
+    payload["http_total"] = sum(http.values())
+    return {
+        "before_bytes": before,
+        "peak_bytes": peak,
+        "rss_source": label,
+        "seconds": elapsed,
+        "payload": payload,
+    }
+
+
+def _run_job(job: dict, src, dst) -> dict:
+    op = job["op"]
+    if op == "naive":
+        from generic_transfer.adapters.pair_baseline import naive_pair_copy
+
+        return naive_pair_copy(
+            src,
+            dst,
+            source_prefix=job["src_prefix"],
+            dest_prefix=job["dest_prefix"],
+            skip_markers=bool(job.get("skip_markers", False)),
+        )
+    if op == "generic":
+        return _generic(
+            src,
+            dst,
+            src_prefix=job["src_prefix"],
+            dest_prefix=job["dest_prefix"],
+            mode=job.get("mode") or "sequential",
+            workers=int(job.get("workers") or 1),
+            chunk_size=job.get("chunk_size"),
+            listing=job.get("listing") or "single",
+        )
+    if op == "server_side":
+        from generic_transfer import GenericFileTransfer
+        from generic_transfer.adapters.file_copy import ObjectStoreFileCopyHook
+
         try:
-            payload, cleanup = fn(round_i)
-        finally:
-            elapsed = time.perf_counter() - t0
-            _cur, peak = tracemalloc.get_traced_memory()
-            tracemalloc.stop()
-            wire.set_latency_ms(0)
-        http = wire.snapshot()
-        payload = {k: v for k, v in payload.items() if k != "copied"}
-        payload["seconds"] = elapsed
-        payload["http_requests"] = http
-        payload["http_total"] = sum(http.values())
-        samples.append(elapsed)
-        peaks.append(peak / (1024 * 1024))
-        rss.append(_rss_mb())
-        http_totals.append(payload["http_total"])
-        last = payload
+            return GenericFileTransfer(
+                destination_hook=ObjectStoreFileCopyHook(dst),
+                copy_params={
+                    "source_fs": src.fs,
+                    "source_prefix": job["src_prefix"],
+                    "source_emu": src,
+                    "dest_prefix": job["dest_prefix"],
+                    "mode": "server_side",
+                },
+            ).execute()
+        except Exception as exc:
+            return {
+                "error": f"{type(exc).__name__}: {exc}",
+                "count": 0,
+                "request_total": 0,
+                "mode": "server_side",
+            }
+    raise ValueError(op)
+
+
+def _timed_jobs(make_job, rounds: int, *, latency_ms: float = 0.0) -> dict:
+    """Run ``make_job(round_i)`` in a child ``rounds`` times.
+
+    ``make_job`` returns ``(job, cleanup)``. The child executes the job.
+    ``cleanup`` runs in the parent after the child exits.
+    """
+    from generic_transfer.rss import run_in_child
+
+    samples, peaks, growths, http_totals = [], [], [], []
+    rss_source = "VmHWM"
+    last: dict = {}
+    for round_i in range(rounds):
+        job, cleanup = make_job(round_i)
+        job["latency_ms"] = latency_ms
+        measured = run_in_child("benchmarks.bench_scale", "measure_job", job)
+        samples.append(measured["seconds"])
+        peak_mb = measured["peak_bytes"] / (1024 * 1024)
+        before_mb = measured["before_bytes"] / (1024 * 1024)
+        peaks.append(peak_mb)
+        growths.append(peak_mb - before_mb)
+        rss_source = measured["rss_source"]
+        last = measured["payload"]
+        http_totals.append(last.get("http_total", 0))
         if cleanup is not None:
             cleanup()
     return {
@@ -312,8 +388,9 @@ def _timed(fn, rounds: int, *, latency_ms: float = 0.0) -> dict:
         "warm_median_s": statistics.median(samples[1:] or samples),
         "median_s": statistics.median(samples),
         "samples_s": samples,
-        "tracemalloc_peak_median_mb": statistics.median(peaks),
-        "rss_max_mb": max(rss),
+        "rss_peak_median_mb": statistics.median(peaks),
+        "rss_growth_median_mb": statistics.median(growths),
+        "rss_source": rss_source,
         "http_total_median": statistics.median(http_totals),
         "last": last,
     }
@@ -344,7 +421,6 @@ def _generic(src, dst, *, src_prefix, dest_prefix, mode, workers=1, chunk_size,
 def _bench_pairs(*, scenario, pairs, rounds, seed_fn, workers_list, chunk_size,
                  latency_ms) -> list:
     from generic_transfer.adapters.emulators import make_fs
-    from generic_transfer.adapters.pair_baseline import naive_pair_copy
 
     out = []
     for src_fl, dst_fl in pairs:
@@ -354,29 +430,43 @@ def _bench_pairs(*, scenario, pairs, rounds, seed_fn, workers_list, chunk_size,
         dst = make_fs(dst_fl, bucket=DST_BUCKET[dst_fl])
         seed_fn(src, prefix)
 
-        def run_naive(round_i, _src=src, _dst=dst, _prefix=prefix):
+        def run_naive(round_i, _src_fl=src_fl, _dst_fl=dst_fl, _dst=dst, _prefix=prefix):
             dp = f"naive-{_prefix}-r{round_i}"
-            res = naive_pair_copy(_src, _dst, source_prefix=_prefix, dest_prefix=dp,
-                                  skip_markers=False)
-            return res, (lambda: _wipe(_dst, dp))
+            job = {
+                "op": "naive",
+                "src_fl": _src_fl,
+                "dst_fl": _dst_fl,
+                "src_prefix": _prefix,
+                "dest_prefix": dp,
+                "skip_markers": False,
+            }
+            return job, (lambda: _wipe(_dst, dp))
 
         def make_generic(mode, workers=1, listing="single", tag=""):
-            def run(round_i, _src=src, _dst=dst, _prefix=prefix):
+            def run(round_i, _src_fl=src_fl, _dst_fl=dst_fl, _dst=dst, _prefix=prefix):
                 dp = f"gen-{tag}-{_prefix}-r{round_i}"
-                res = _generic(_src, _dst, src_prefix=_prefix, dest_prefix=dp,
-                               mode=mode, workers=workers, chunk_size=chunk_size,
-                               listing=listing)
-                return res, (lambda: _wipe(_dst, dp))
+                job = {
+                    "op": "generic",
+                    "src_fl": _src_fl,
+                    "dst_fl": _dst_fl,
+                    "src_prefix": _prefix,
+                    "dest_prefix": dp,
+                    "mode": mode,
+                    "workers": workers,
+                    "chunk_size": chunk_size,
+                    "listing": listing,
+                }
+                return job, (lambda: _wipe(_dst, dp))
             return run
 
-        row["modes"]["naive_sequential"] = _timed(run_naive, rounds, latency_ms=latency_ms)
-        row["modes"]["generic_sequential_per_key"] = _timed(
+        row["modes"]["naive_sequential"] = _timed_jobs(run_naive, rounds, latency_ms=latency_ms)
+        row["modes"]["generic_sequential_per_key"] = _timed_jobs(
             make_generic("sequential", listing="per_key", tag="seqpk"), rounds,
             latency_ms=latency_ms)
-        row["modes"]["generic_sequential"] = _timed(
+        row["modes"]["generic_sequential"] = _timed_jobs(
             make_generic("sequential", tag="seq"), rounds, latency_ms=latency_ms)
         for w in workers_list:
-            row["modes"][f"generic_parallel_{w}"] = _timed(
+            row["modes"][f"generic_parallel_{w}"] = _timed_jobs(
                 make_generic("parallel", workers=w, tag=f"par{w}"), rounds,
                 latency_ms=latency_ms)
         _wipe(src, prefix)
@@ -387,7 +477,6 @@ def _bench_pairs(*, scenario, pairs, rounds, seed_fn, workers_list, chunk_size,
 
 def _bench_large(*, pairs, rounds, size_mb, workers_list, chunk_size) -> list:
     from generic_transfer.adapters.emulators import make_fs, seed_one_large
-    from generic_transfer.adapters.pair_baseline import naive_pair_copy
 
     out = []
     for src_fl, dst_fl in pairs:
@@ -397,21 +486,37 @@ def _bench_large(*, pairs, rounds, size_mb, workers_list, chunk_size) -> list:
         dst = make_fs(dst_fl, bucket=DST_BUCKET[dst_fl])
         seed_one_large(src, prefix, size_mb=size_mb)
 
-        def run_naive(round_i, _src=src, _dst=dst, _prefix=prefix):
+        def run_naive(round_i, _src_fl=src_fl, _dst_fl=dst_fl, _dst=dst, _prefix=prefix):
             dp = f"lnaive-{_prefix}-r{round_i}"
-            res = naive_pair_copy(_src, _dst, source_prefix=_prefix, dest_prefix=dp)
-            return res, (lambda: _wipe(_dst, dp))
+            job = {
+                "op": "naive",
+                "src_fl": _src_fl,
+                "dst_fl": _dst_fl,
+                "src_prefix": _prefix,
+                "dest_prefix": dp,
+            }
+            return job, (lambda: _wipe(_dst, dp))
 
-        def run_gen(round_i, mode="sequential", workers=1, _src=src, _dst=dst, _prefix=prefix):
+        def run_gen(round_i, mode="sequential", workers=1, _src_fl=src_fl, _dst_fl=dst_fl,
+                    _dst=dst, _prefix=prefix):
             dp = f"l{mode[:3]}{workers}-{_prefix}-r{round_i}"
-            res = _generic(_src, _dst, src_prefix=_prefix, dest_prefix=dp, mode=mode,
-                           workers=workers, chunk_size=chunk_size)
-            return res, (lambda: _wipe(_dst, dp))
+            job = {
+                "op": "generic",
+                "src_fl": _src_fl,
+                "dst_fl": _dst_fl,
+                "src_prefix": _prefix,
+                "dest_prefix": dp,
+                "mode": mode,
+                "workers": workers,
+                "chunk_size": chunk_size,
+                "listing": "single",
+            }
+            return job, (lambda: _wipe(_dst, dp))
 
-        row["modes"]["naive_sequential"] = _timed(run_naive, rounds)
-        row["modes"]["generic_sequential"] = _timed(run_gen, rounds)
+        row["modes"]["naive_sequential"] = _timed_jobs(run_naive, rounds)
+        row["modes"]["generic_sequential"] = _timed_jobs(run_gen, rounds)
         w = workers_list[0]
-        row["modes"][f"generic_parallel_{w}"] = _timed(
+        row["modes"][f"generic_parallel_{w}"] = _timed_jobs(
             lambda r, _w=w: run_gen(r, mode="parallel", workers=_w), rounds)
         _wipe(src, prefix)
         out.append(row)
@@ -420,9 +525,7 @@ def _bench_large(*, pairs, rounds, size_mb, workers_list, chunk_size) -> list:
 
 
 def _bench_server_side(*, pairs, rounds) -> list:
-    from generic_transfer import GenericFileTransfer
     from generic_transfer.adapters.emulators import make_fs, seed_tree_with_markers
-    from generic_transfer.adapters.file_copy import ObjectStoreFileCopyHook
 
     out = []
     for src_fl, dst_fl in pairs:
@@ -432,28 +535,33 @@ def _bench_server_side(*, pairs, rounds) -> list:
         dst = make_fs(dst_fl, bucket=DST_BUCKET[dst_fl])
         seed_tree_with_markers(src, prefix)
 
-        def run_ss(round_i):
-            dp = f"ss-out-{prefix}-r{round_i}"
-            try:
-                res = GenericFileTransfer(
-                    destination_hook=ObjectStoreFileCopyHook(dst),
-                    copy_params={"source_fs": src.fs, "source_prefix": prefix,
-                                 "source_emu": src, "dest_prefix": dp,
-                                 "mode": "server_side"},
-                ).execute()
-            except Exception as exc:
-                res = {"error": f"{type(exc).__name__}: {exc}", "count": 0,
-                       "request_total": 0, "mode": "server_side"}
-            return res, (lambda: _wipe(dst, dp))
+        def run_ss(round_i, _src_fl=src_fl, _dst_fl=dst_fl, _dst=dst, _prefix=prefix):
+            dp = f"ss-out-{_prefix}-r{round_i}"
+            job = {
+                "op": "server_side",
+                "src_fl": _src_fl,
+                "dst_fl": _dst_fl,
+                "src_prefix": _prefix,
+                "dest_prefix": dp,
+            }
+            return job, (lambda: _wipe(_dst, dp))
 
-        def run_rw(round_i):
-            dp = f"rw-out-{prefix}-r{round_i}"
-            res = _generic(src, dst, src_prefix=prefix, dest_prefix=dp,
-                           mode="sequential", chunk_size=None)
-            return res, (lambda: _wipe(dst, dp))
+        def run_rw(round_i, _src_fl=src_fl, _dst_fl=dst_fl, _dst=dst, _prefix=prefix):
+            dp = f"rw-out-{_prefix}-r{round_i}"
+            job = {
+                "op": "generic",
+                "src_fl": _src_fl,
+                "dst_fl": _dst_fl,
+                "src_prefix": _prefix,
+                "dest_prefix": dp,
+                "mode": "sequential",
+                "chunk_size": None,
+                "listing": "single",
+            }
+            return job, (lambda: _wipe(_dst, dp))
 
-        row["modes"]["server_side"] = _timed(run_ss, rounds)
-        row["modes"]["read_write"] = _timed(run_rw, rounds)
+        row["modes"]["server_side"] = _timed_jobs(run_ss, rounds)
+        row["modes"]["read_write"] = _timed_jobs(run_rw, rounds)
         out.append(row)
         print(f"  [server_side] {row['pair']} done", flush=True)
     return out
@@ -490,15 +598,17 @@ def _render(results: dict, *, quick: bool) -> str:
         "Warm med = median of rounds 1..N-1 (with 3 rounds that is the mean of two samples, "
         "so one stall moves it; this run uses the rounds shown above). Max = slowest round. "
         "Columns: *HTTP reqs* = real requests counted at the transport (median over rounds); "
-        "*Logical* = the copier's own list/get/put tally (last round). Peak MB = tracemalloc "
-        "peak (Python allocations only, median over rounds).",
+        "*Logical* = the copier's own list/get/put tally (last round). "
+        "RSS peak MB = VmHWM of a fresh child process after the copy "
+        "(ru_maxrss on macOS; the snapshot names the source). "
+        "RSS growth MB = that peak minus the mark taken after imports, before the copy.",
         "",
     ]
     for name, payload in results["scenarios"].items():
         lines += [f"## `{name}`: {SCENARIO_TITLES.get(name, name)}", ""]
         lines += [
-            "| Pair | Mode | Cold (s) | Warm med (s) | Max (s) | Objects | HTTP reqs | Logical | Peak MB |",
-            "|---|---|---:|---:|---:|---:|---:|---:|---:|",
+            "| Pair | Mode | Cold (s) | Warm med (s) | Max (s) | Objects | HTTP reqs | Logical | RSS peak MB | RSS growth MB |",
+            "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|",
         ]
         for row in payload:
             for mode, stats in row["modes"].items():
@@ -509,7 +619,8 @@ def _render(results: dict, *, quick: bool) -> str:
                     f"{last.get('count', last.get('error', '?'))} | "
                     f"{stats['http_total_median']:.0f} | "
                     f"{last.get('request_total', '?')} | "
-                    f"{stats['tracemalloc_peak_median_mb']:.1f} |"
+                    f"{stats['rss_peak_median_mb']:.1f} | "
+                    f"{stats['rss_growth_median_mb']:.1f} |"
                 )
         lines.append("")
     lines += [
