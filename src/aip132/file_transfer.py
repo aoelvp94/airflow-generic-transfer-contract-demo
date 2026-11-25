@@ -6,6 +6,8 @@ markers, and returns the destination keys that were copied.
 
 The functions here do the work. An Airflow ``@task`` can call ``copy_files``
 directly; the operator is a thin facilitator around the same functions.
+OpenLineage hooks name the prefix on start and each copied object on
+complete. The provider is imported only when those hooks run.
 
 .. code-block:: python
 
@@ -20,6 +22,7 @@ directly; the operator is a thin facilitator around the same functions.
 from __future__ import annotations
 
 import fnmatch
+import os
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -36,6 +39,11 @@ _MARKER_POLICIES = (_MARKER_SKIP, _MARKER_COPY)
 _FILE_PROTOCOLS = {"file", "local", "memory"}
 _DIRECTORY_TYPES = {"directory", "dir"}
 
+# Process-local record of the pairs ``execute`` copied, keyed by dag and task.
+# The OpenLineage listener may hold a different operator instance in the same
+# process. A listener in another process reads the task return value instead.
+_OL_PAIRS: dict[tuple[str | None, str | None], list[tuple[ObjectStoragePath, ObjectStoragePath]]] = {}
+
 
 @dataclass(frozen=True)
 class PlannedCopy:
@@ -44,6 +52,9 @@ class PlannedCopy:
     source: ObjectStoragePath
     destination: ObjectStoragePath
     is_marker: bool
+    # Relative destination key, including a trailing slash the listing stored.
+    # ``ObjectStoragePath`` drops that slash, so the copy keeps it here.
+    relative: str = ""
 
 
 def _attach_memory(conn_id: str | None) -> None:
@@ -152,6 +163,45 @@ def classify_folder_markers(entries: Sequence[Mapping[str, Any]]) -> list[dict[s
     return out
 
 
+def collapse_marker_aliases(entries: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """One row per marker object.
+
+    ``find(..., withdirs=True)`` lists a folder marker twice: a synthetic
+    directory (``nested``, type ``directory``) and the zero-byte object
+    (``nested/``, type ``file``). Those are one key. The object name, the
+    one that ends with ``/``, is kept.
+
+    adlfs lists that object only as the directory, with the slash removed.
+    The slash is put back so the copied key is the object key. A non-marker
+    is never rewritten.
+    """
+    kept: list[dict[str, Any]] = []
+    markers: dict[str, list[dict[str, Any]]] = {}
+    order: list[str] = []
+    for entry in entries:
+        row = dict(entry)
+        if not row.get("is_marker"):
+            kept.append(row)
+            continue
+        norm = str(row.get("name", "")).rstrip("/")
+        if norm not in markers:
+            markers[norm] = []
+            order.append(norm)
+        markers[norm].append(row)
+    for norm in order:
+        rows = markers[norm]
+        slashed = [row for row in rows if str(row.get("name", "")).endswith("/")]
+        if slashed:
+            kept.append(slashed[0])
+            continue
+        row = rows[0]
+        name = str(row.get("name", ""))
+        if name and str(row.get("type") or "") in _DIRECTORY_TYPES and not name.endswith("/"):
+            row["name"] = name + "/"
+        kept.append(row)
+    return kept
+
+
 def _is_under(name: str, prefix: str) -> bool:
     name_l = name.lstrip("/").rstrip("/")
     pref_l = prefix.lstrip("/").rstrip("/")
@@ -188,10 +238,12 @@ def list_prefix_once(src: ObjectStoragePath) -> list[dict[str, Any]]:
 
 
 def _basename(key: str) -> str:
+    slash = key.endswith("/")
     key = key.rstrip("/")
-    if "/" not in key:
-        return key
-    return key.rsplit("/", 1)[-1]
+    base = key if "/" not in key else key.rsplit("/", 1)[-1]
+    if slash and base:
+        return base + "/"
+    return base
 
 
 def _glob_match(relative: str, match_glob: str | None) -> bool:
@@ -246,13 +298,18 @@ def _known(path: ObjectStoragePath, existing: set[str]) -> bool:
 
 
 def _layout_relative(relative: str, *, keep_structure: bool, marker: bool) -> str:
+    """Destination relative key.
+
+    ``keep_structure`` keeps ``relative`` unchanged, including a trailing
+    slash on a folder marker, so the marker key is copied in the form the
+    listing stored. Flattening uses the basename and keeps that slash when
+    the source key had one. ``marker`` is accepted so callers can pass the
+    flag; the slash is not rewritten from it.
+    """
+    del marker
     if keep_structure:
-        dest_rel = relative
-    else:
-        dest_rel = _basename(relative)
-    if marker and dest_rel and not dest_rel.endswith("/"):
-        dest_rel += "/"
-    return dest_rel
+        return relative
+    return _basename(relative)
 
 
 def plan_prefix_copy(
@@ -269,7 +326,7 @@ def plan_prefix_copy(
     prefix = _fs_prefix(src.fs, src.path)
     protocol = src.protocol or "file"
     planned: list[PlannedCopy] = []
-    for entry in list_prefix_once(src):
+    for entry in collapse_marker_aliases(list_prefix_once(src)):
         rel = relative_key(str(entry["name"]), prefix)
         if not rel:
             continue
@@ -295,6 +352,7 @@ def plan_prefix_copy(
                 source=child_path(src, rel),
                 destination=child_path(dst, dest_rel),
                 is_marker=is_marker,
+                relative=dest_rel,
             )
         )
     planned.sort(key=lambda item: item.source.key)
@@ -333,23 +391,44 @@ def stream_copy(
         _copy_stream(reader, writer, chunk_size)
 
 
+def _write_empty_marker(dst: ObjectStoragePath, *, trailing_slash: bool) -> None:
+    """Write a zero-byte marker.
+
+    ``ObjectStoragePath`` drops a trailing slash, and on S3, GCS, and Azure
+    that slash is part of the object key. ``trailing_slash`` is true when the
+    listing stored one. A marker listed without a slash stays without one.
+    """
+    _prepare_file_parent(dst)
+    target = str(dst.path)
+    if trailing_slash and not target.endswith("/"):
+        target = target.rstrip("/") + "/"
+    # ``open`` on s3fs strips a trailing slash, so the marker key would be
+    # stored without it. ``pipe`` writes the key it is given, slash included.
+    pipe = getattr(dst.fs, "pipe", None)
+    if trailing_slash and callable(pipe):
+        pipe(target, b"")
+        return
+    with dst.fs.open(target, "wb") as handle:
+        handle.write(b"")
+
+
 def copy_object(
     src: ObjectStoragePath,
     dst: ObjectStoragePath,
     *,
     chunk_size: int = DEFAULT_CHUNK_SIZE,
     marker: bool = False,
+    trailing_slash: bool = False,
 ) -> None:
     """Copy one object.
 
     Same-store copies go through ``ObjectStoragePath.copy`` (``fs.copy``).
     Cross-store copies stream. A folder marker is written as an empty object;
-    there is no body to stream.
+    there is no body to stream. ``trailing_slash`` puts back the slash
+    ``ObjectStoragePath`` removed from a marker key.
     """
     if marker:
-        _prepare_file_parent(dst)
-        with dst.open("wb") as writer:
-            writer.write(b"")
+        _write_empty_marker(dst, trailing_slash=trailing_slash)
         return
     if same_store(src, dst):
         _prepare_file_parent(dst)
@@ -396,6 +475,7 @@ def copy_files(
     keep_structure: bool = True,
     folder_markers: str = _MARKER_SKIP,
     chunk_size: int = DEFAULT_CHUNK_SIZE,
+    lineage: list[tuple[ObjectStoragePath, ObjectStoragePath]] | None = None,
 ) -> list[str] | None:
     """Copy ``src`` to ``dst``.
 
@@ -403,8 +483,13 @@ def copy_files(
     A prefix returns the destination keys that were copied, sorted. Keys
     already present are left unchanged when ``overwrite`` is false, and those
     keys are omitted from the returned list. ``keep_structure`` false flattens
-    each object to its basename under ``dst``.
+    each object to its basename under ``dst``. When ``lineage`` is a list,
+    each copied ``(source, destination)`` pair is appended to it.
     """
+    if os.environ.get("AIP132_ATTACH_EMULATORS") == "1":
+        from aip132.emulator_attach import attach_emulators
+
+        attach_emulators(src, dst, source_conn_id, dest_conn_id)
     if chunk_size <= 0:
         raise ValueError(f"chunk_size must be positive, got {chunk_size}")
     if folder_markers not in _MARKER_POLICIES:
@@ -413,6 +498,8 @@ def copy_files(
     dst_path = resolve_storage_path(dst, dest_conn_id)
     if not _is_prefix(src_path):
         copy_single_file(src_path, dst_path, overwrite=overwrite)
+        if lineage is not None:
+            lineage.append((src_path, dst_path))
         return None
     planned = plan_prefix_copy(
         src_path,
@@ -426,13 +513,21 @@ def copy_files(
     for item in planned:
         if existing is not None and _known(item.destination, existing):
             continue
+        slash = bool(item.relative) and item.relative.endswith("/")
         copy_object(
             item.source,
             item.destination,
             chunk_size=chunk_size,
             marker=item.is_marker,
+            trailing_slash=slash,
         )
-        copied.append(item.destination.key)
+        key = item.destination.key
+        # ``ObjectStoragePath.key`` drops the slash the listing stored.
+        if slash and key and not key.endswith("/"):
+            key = key + "/"
+        copied.append(key)
+        if lineage is not None:
+            lineage.append((item.source, item.destination))
         if existing is not None:
             existing |= _forms(item.destination.path)
             existing |= _forms(item.destination.key)
@@ -458,6 +553,15 @@ class PrefixFileTransferOperator(FileTransferOperator):
     ``ObjectStoragePath.copy``. Cross-store pairs stream in ``chunk_size``
     chunks.
 
+    OpenLineage: ``get_openlineage_facets_on_start`` names the source and
+    destination paths (the prefix, or the single file) and does not list.
+    ``get_openlineage_facets_on_complete`` names each object that was copied.
+    Folder markers appear there only when they were copied. A single file
+    uses the same datasets as ``FileTransferOperator`` for ``file``, ``s3``,
+    and ``gs``. ``gcs`` is reported as ``gs``. ``abfs`` / ``wasb`` are
+    reported as ``abfss`` / ``wasbs``. The provider is imported inside the
+    hooks.
+
     :param src: Source file or prefix. A prefix should end with ``/``.
     :param dst: Destination file or prefix.
     :param source_conn_id: Connection id for ``src`` when ``src`` is a string.
@@ -468,8 +572,10 @@ class PrefixFileTransferOperator(FileTransferOperator):
     :param keep_structure: When true, keep the relative path under ``dst``.
         When false, place each object at ``dst / basename``.
     :param folder_markers: ``skip`` (default) or ``copy``. ``copy`` writes an
-        empty object for a marker that is a real key. Directory entries on
-        ``file://`` and ``memory://`` are not keys and are always skipped.
+        empty object for a marker that is a real key and returns that key.
+        The destination key keeps the source key's trailing slash. Directory
+        entries on ``file://`` and ``memory://`` are not keys and are always
+        skipped.
     :param chunk_size: Bytes per read on the cross-store stream path.
     """
 
@@ -515,7 +621,8 @@ class PrefixFileTransferOperator(FileTransferOperator):
         self.chunk_size = chunk_size
 
     def execute(self, context: Any) -> list[str] | None:
-        return copy_files(
+        pairs: list[tuple[ObjectStoragePath, ObjectStoragePath]] = []
+        result = copy_files(
             self.src,
             self.dst,
             source_conn_id=self.source_conn_id,
@@ -525,4 +632,118 @@ class PrefixFileTransferOperator(FileTransferOperator):
             keep_structure=self.keep_structure,
             folder_markers=self.folder_markers,
             chunk_size=self.chunk_size,
+            lineage=pairs,
         )
+        self._ol_pairs = pairs
+        self._ol_output_names = list(result) if isinstance(result, list) else None
+        self._ol_ran = True
+        if self.dag_id and self.task_id:
+            _OL_PAIRS[(self.dag_id, self.task_id)] = pairs
+        return result
+
+    def _storage_paths(self) -> tuple[ObjectStoragePath, ObjectStoragePath]:
+        return (
+            resolve_storage_path(self.src, self.source_conn_id),
+            resolve_storage_path(self.dst, self.dest_conn_id),
+        )
+
+    def get_openlineage_facets_on_start(self) -> Any:
+        """Name the configured source and destination. Does not list.
+
+        A prefix is one dataset (the prefix key). A single file is one
+        dataset, the same pair ``FileTransferOperator`` emits for ``file``,
+        ``s3``, and ``gs``.
+        """
+        from aip132.lineage import endpoint_uri, lineage_from_uris
+
+        # Name the URIs the task was given. ``ObjectStoragePath`` drops a
+        # trailing slash and, for ``abfs://container@account...``, treats the
+        # container as a connection id. Parsing the original text keeps both.
+        return lineage_from_uris(endpoint_uri(self.src), endpoint_uri(self.dst))
+
+    def get_openlineage_facets_on_complete(self, task_instance: Any = None) -> Any:
+        """Name each object that was copied.
+
+        Markers are included only when ``folder_markers`` copied them. Keys
+        left in place because ``overwrite`` is false are absent. When this
+        hook cannot see the copy (no ``execute`` in this process and no
+        return value on ``task_instance``), it uses the start datasets.
+        """
+        from aip132.lineage import operator_lineage
+
+        found = self._copied_pairs(task_instance)
+        if found is None:
+            return self.get_openlineage_facets_on_start()
+        pairs, names = found
+        return operator_lineage(pairs, output_names=names)
+
+    def _copied_pairs(
+        self, task_instance: Any
+    ) -> tuple[list[tuple[ObjectStoragePath, ObjectStoragePath]], list[str] | None] | None:
+        if getattr(self, "_ol_ran", False):
+            pairs = list(getattr(self, "_ol_pairs", []))
+            names = getattr(self, "_ol_output_names", None)
+            if names is not None and len(names) != len(pairs):
+                names = None
+            return pairs, names
+        cached = _OL_PAIRS.get((self.dag_id, self.task_id))
+        if cached is not None:
+            return list(cached), None
+        keys = _xcom_return_keys(task_instance, self.task_id)
+        if keys is None:
+            return None
+        return self._pairs_from_dest_keys(keys), keys
+
+    def _pairs_from_dest_keys(
+        self, dest_keys: list[str]
+    ) -> list[tuple[ObjectStoragePath, ObjectStoragePath]]:
+        src, dst = self._storage_paths()
+        dst_key = dst.key
+        pairs: list[tuple[ObjectStoragePath, ObjectStoragePath]] = []
+        for dest_key in dest_keys:
+            dest_path = _replace_key(dst, dest_key)
+            if self.keep_structure and dst_key and dest_key.startswith(dst_key):
+                rel = dest_key[len(dst_key) :]
+                src_path = child_path(src, rel) if rel else src
+            elif self.keep_structure and not dst_key:
+                src_path = child_path(src, dest_key)
+            else:
+                src_path = src
+            pairs.append((src_path, dest_path))
+        return pairs
+
+
+def _replace_key(root: ObjectStoragePath, key: str) -> ObjectStoragePath:
+    """Same bucket and connection as ``root``, with ``key`` as the object key."""
+    protocol = root.protocol or "file"
+    text = key.lstrip("/")
+    if root.bucket:
+        uri = f"{protocol}://{root.bucket}/{text}"
+    else:
+        uri = f"{protocol}:///{text}"
+    return ObjectStoragePath(uri, conn_id=root.conn_id)
+
+
+def _xcom_return_keys(task_instance: Any, task_id: str | None) -> list[str] | None:
+    """Return value pushed by ``execute``, when the task instance exposes it."""
+    if task_instance is None:
+        return None
+    pull = getattr(task_instance, "xcom_pull", None)
+    value: Any = None
+    if callable(pull):
+        try:
+            value = pull(task_ids=task_id, key="return_value")
+        except TypeError:
+            try:
+                value = pull(key="return_value")
+            except Exception:
+                return None
+        except Exception:
+            return None
+    elif isinstance(getattr(task_instance, "xcom", None), dict):
+        value = task_instance.xcom.get("return_value")
+    else:
+        return None
+    if isinstance(value, list) and all(isinstance(item, str) for item in value):
+        return value
+    return None

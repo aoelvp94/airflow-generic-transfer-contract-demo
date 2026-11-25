@@ -23,10 +23,13 @@ from datetime import datetime
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
-os.environ.setdefault("AIRFLOW_HOME", str(_ROOT / ".airflow-aip132"))
-os.environ.setdefault("AIRFLOW__CORE__LOAD_EXAMPLES", "False")
-os.environ.setdefault("AIRFLOW__CORE__UNIT_TEST_MODE", "True")
-os.environ.setdefault("AIRFLOW__LOGGING__LOGGING_LEVEL", "ERROR")
+# These defaults apply when the file is executed as a script (`just aip132-demo`).
+# Importing the Dag into a scheduler must not turn unit-test mode on.
+if __name__ == "__main__":
+    os.environ.setdefault("AIRFLOW_HOME", str(_ROOT / ".airflow-aip132"))
+    os.environ.setdefault("AIRFLOW__CORE__LOAD_EXAMPLES", "False")
+    os.environ.setdefault("AIRFLOW__CORE__UNIT_TEST_MODE", "True")
+    os.environ.setdefault("AIRFLOW__LOGGING__LOGGING_LEVEL", "ERROR")
 
 from airflow.sdk import DAG
 
