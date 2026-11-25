@@ -240,3 +240,39 @@ experiment-all-pairs:
     fi
     if [ "$PARITY_RC" -ne 0 ]; then exit "$PARITY_RC"; fi
     exit "$WRAP_RC"
+
+
+# AIP-132 phase 1. Separate venv so the default demo env stays free of Airflow.
+# Unit tests only (file:// and memory://). Integration is documented in
+# docs/AIP-132-demo.md and needs `just up`.
+aip132-test:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export PATH="${HOME}/.local/bin:${PATH}"
+    PY=".venv-aip132/bin/python"
+    if [[ ! -x "$PY" ]] || ! "$PY" -c 'import airflow, aip132.file_transfer' >/dev/null 2>&1; then
+        command -v uv >/dev/null 2>&1 || { echo "uv is required: https://docs.astral.sh/uv/"; exit 1; }
+        uv venv .venv-aip132 --python 3.12
+        uv pip install --python .venv-aip132/bin/python -e '.[dev,aip132]' \
+            --constraint 'https://raw.githubusercontent.com/apache/airflow/constraints-3.4.0/constraints-3.12.txt'
+    fi
+    export AIRFLOW_HOME="${AIRFLOW_HOME:-$PWD/.airflow-aip132}"
+    export AIRFLOW__CORE__LOAD_EXAMPLES=False
+    export AIRFLOW__CORE__UNIT_TEST_MODE=True
+    "$PY" -m pytest -v -m 'not integration' tests/unit/test_aip132_file_transfer.py
+
+aip132-demo:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export PATH="${HOME}/.local/bin:${PATH}"
+    PY=".venv-aip132/bin/python"
+    if [[ ! -x "$PY" ]] || ! "$PY" -c 'import airflow, aip132.file_transfer' >/dev/null 2>&1; then
+        command -v uv >/dev/null 2>&1 || { echo "uv is required: https://docs.astral.sh/uv/"; exit 1; }
+        uv venv .venv-aip132 --python 3.12
+        uv pip install --python .venv-aip132/bin/python -e '.[dev,aip132]' \
+            --constraint 'https://raw.githubusercontent.com/apache/airflow/constraints-3.4.0/constraints-3.12.txt'
+    fi
+    export AIRFLOW_HOME="${AIRFLOW_HOME:-$PWD/.airflow-aip132}"
+    export AIRFLOW__CORE__LOAD_EXAMPLES=False
+    export AIRFLOW__CORE__UNIT_TEST_MODE=True
+    "$PY" examples/aip132_s3_prefix_to_gcs.py
