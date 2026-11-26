@@ -26,6 +26,7 @@ from aip132.file_transfer import (
     _copy_stream,
     child_path,
     classify_folder_markers,
+    collapse_marker_aliases,
     copy_files,
     list_destination_names,
     list_prefix_once,
@@ -141,6 +142,30 @@ def test_classify_folder_markers_uses_the_listing_only():
     }
 
 
+def test_collapse_marker_aliases_keeps_one_object_key():
+    """A withdirs directory and the zero-byte object are one marker.
+
+    The object name is the one that ends with ``/``. A directory row alone
+    (adlfs drops the slash) gets that slash back. A real file is unchanged.
+    """
+    both = collapse_marker_aliases(
+        [
+            {"name": "pre/nested", "size": 0, "type": "directory", "is_marker": True},
+            {"name": "pre/nested/", "size": 0, "type": "file", "is_marker": True},
+            {"name": "pre/a.txt", "size": 4, "type": "file", "is_marker": False},
+        ]
+    )
+    assert [row["name"] for row in both] == ["pre/a.txt", "pre/nested/"]
+    azure = collapse_marker_aliases(
+        [{"name": "pre/nested", "size": 0, "type": "directory", "is_marker": True}]
+    )
+    assert azure[0]["name"] == "pre/nested/"
+    empty = collapse_marker_aliases(
+        [{"name": "pre/hold", "size": 0, "type": "file", "is_marker": True}]
+    )
+    assert empty[0]["name"] == "pre/hold"
+
+
 def test_list_prefix_once_does_not_stat_each_key():
     class _FS:
         def __init__(self) -> None:
@@ -219,6 +244,80 @@ def test_prefix_copy_returns_keys_and_keeps_bytes(store):
     assert _read(dst, "nested/b.txt") == b"beta"
     assert _read(dst, "empty.txt") == b""
     assert _read(dst, "note.json") == b'{"id":1}'
+    assert not any(key.endswith("/") for key in copied)
+
+
+def test_folder_markers_copy_keeps_real_marker_keys(store, monkeypatch):
+    """``copy`` writes an empty object for a real marker key and returns it.
+
+    Directory entries on ``file://`` and ``memory://`` are not objects, so
+    they stay out of the returned keys. A zero-byte key that the listing
+    classified as a marker is copied as-is (no extra slash added).
+    """
+    from aip132 import file_transfer as ft
+
+    _backend, src, dst = store
+    dst_skip = dst[:-1] + "-skip/"
+    if dst.startswith("file:"):
+        Path(ObjectStoragePath(dst_skip).path).mkdir(parents=True, exist_ok=True)
+    _mkdir(src, "nested")
+    _write(src, "a.txt", b"alpha")
+    _write(src, "nested/b.txt", b"beta")
+    prefix = ft._fs_prefix(_root(src).fs, _root(src).path)
+    real_list = ft.list_prefix_once
+
+    def _listing(path, _real=real_list, _prefix=prefix):
+        rows = _real(path)
+        rows.append({"name": f"{_prefix}/hold", "size": 0, "type": "file", "is_marker": True})
+        rows.append(
+            {"name": f"{_prefix}/dirmark", "size": 0, "type": "directory", "is_marker": True}
+        )
+        return rows
+
+    monkeypatch.setattr(ft, "list_prefix_once", _listing)
+    copied = _execute(
+        PrefixFileTransferOperator,
+        src,
+        dst,
+        overwrite=True,
+        folder_markers="copy",
+    )
+    rels = _rels(dst, copied)
+    assert "a.txt" in rels
+    assert "nested/b.txt" in rels
+    assert "hold" in rels
+    assert "dirmark" not in rels
+    assert not any(rel.endswith("/") for rel in rels)
+    assert _read(dst, "hold") == b""
+    assert _read(dst, "a.txt") == b"alpha"
+    assert _read(dst, "nested/b.txt") == b"beta"
+    skipped = _execute(
+        PrefixFileTransferOperator,
+        src,
+        dst_skip,
+        overwrite=True,
+        folder_markers="skip",
+    )
+    skip_rels = _rels(dst_skip, skipped)
+    assert "hold" not in skip_rels
+    assert "dirmark" not in skip_rels
+    assert "a.txt" in skip_rels and "nested/b.txt" in skip_rels
+
+
+def test_folder_markers_copy_skips_directory_entries_on_file_and_memory(store):
+    _backend, src, dst = store
+    _mkdir(src, "nested")
+    _write(src, "a.txt", b"alpha")
+    _write(src, "nested/b.txt", b"beta")
+    _write(src, "empty.txt", b"")
+    copied = _execute(
+        PrefixFileTransferOperator,
+        src,
+        dst,
+        overwrite=True,
+        folder_markers="copy",
+    )
+    assert _rels(dst, copied) == ["a.txt", "empty.txt", "nested/b.txt"]
     assert not any(key.endswith("/") for key in copied)
 
 

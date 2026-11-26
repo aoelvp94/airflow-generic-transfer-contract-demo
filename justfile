@@ -250,7 +250,7 @@ aip132-test:
     set -euo pipefail
     export PATH="${HOME}/.local/bin:${PATH}"
     PY=".venv-aip132/bin/python"
-    if [[ ! -x "$PY" ]] || ! "$PY" -c 'import airflow, aip132.file_transfer' >/dev/null 2>&1; then
+    if [[ ! -x "$PY" ]] || ! "$PY" -c 'import airflow, aip132.file_transfer, airflow.providers.openlineage' >/dev/null 2>&1; then
         command -v uv >/dev/null 2>&1 || { echo "uv is required: https://docs.astral.sh/uv/"; exit 1; }
         uv venv .venv-aip132 --python 3.12
         uv pip install --python .venv-aip132/bin/python -e '.[dev,aip132]' \
@@ -259,14 +259,14 @@ aip132-test:
     export AIRFLOW_HOME="${AIRFLOW_HOME:-$PWD/.airflow-aip132}"
     export AIRFLOW__CORE__LOAD_EXAMPLES=False
     export AIRFLOW__CORE__UNIT_TEST_MODE=True
-    "$PY" -m pytest -v -m 'not integration' tests/unit/test_aip132_file_transfer.py
+    "$PY" -m pytest -v -m 'not integration and not e2e' tests/unit/test_aip132_file_transfer.py tests/unit/test_aip132_openlineage.py
 
 aip132-demo:
     #!/usr/bin/env bash
     set -euo pipefail
     export PATH="${HOME}/.local/bin:${PATH}"
     PY=".venv-aip132/bin/python"
-    if [[ ! -x "$PY" ]] || ! "$PY" -c 'import airflow, aip132.file_transfer' >/dev/null 2>&1; then
+    if [[ ! -x "$PY" ]] || ! "$PY" -c 'import airflow, aip132.file_transfer, airflow.providers.openlineage' >/dev/null 2>&1; then
         command -v uv >/dev/null 2>&1 || { echo "uv is required: https://docs.astral.sh/uv/"; exit 1; }
         uv venv .venv-aip132 --python 3.12
         uv pip install --python .venv-aip132/bin/python -e '.[dev,aip132]' \
@@ -276,3 +276,68 @@ aip132-demo:
     export AIRFLOW__CORE__LOAD_EXAMPLES=False
     export AIRFLOW__CORE__UNIT_TEST_MODE=True
     "$PY" examples/aip132_s3_prefix_to_gcs.py
+
+# Scheduler run of examples/aip132_s3_prefix_to_gcs.py.
+# Brings up the object-store emulators and Airflow 3.4.0 (api-server, scheduler,
+# dag-processor; LocalExecutor, no triggerer), triggers the Dag, checks the
+# XCom and an OpenLineage console event, then tears both stacks down.
+aip132-e2e:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export PATH="${HOME}/.local/bin:${PATH}"
+    if [[ -z "${DOCKER_HOST:-}" && ! -S /var/run/docker.sock ]]; then
+        if curl -sf --connect-timeout 1 http://127.0.0.1:2375/version >/dev/null 2>&1; then
+            export DOCKER_HOST=tcp://127.0.0.1:2375
+        fi
+    fi
+    PY=".venv-aip132/bin/python"
+    if [[ ! -x "$PY" ]] || ! "$PY" -c 'import airflow, aip132.file_transfer, airflow.providers.openlineage' >/dev/null 2>&1; then
+        command -v uv >/dev/null 2>&1 || { echo "uv is required: https://docs.astral.sh/uv/"; exit 1; }
+        uv venv .venv-aip132 --python 3.12
+        uv pip install --python .venv-aip132/bin/python -e '.[dev,aip132]' \
+            --constraint 'https://raw.githubusercontent.com/apache/airflow/constraints-3.4.0/constraints-3.12.txt'
+    fi
+    COMPOSE=(docker compose -f aip132/docker/docker-compose.yml)
+    mkdir -p aip132/docker/logs
+    if [[ ! -f aip132/docker/.env ]]; then
+        key=$("$PY" -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')
+        printf 'FERNET_KEY=%s\nAIRFLOW_UID=%s\n' "$key" "$(id -u)" > aip132/docker/.env
+    fi
+    cleanup() {
+        "${COMPOSE[@]}" logs --no-color > aip132/docker/e2e-compose.log 2>&1 || true
+        "${COMPOSE[@]}" down -v --remove-orphans || true
+        ./emulators/emulators.sh down || true
+    }
+    trap cleanup EXIT
+    ./emulators/emulators.sh up
+    rm -rf aip132/docker/build
+    mkdir -p aip132/docker/build
+    cp -a src/aip132 aip132/docker/build/aip132
+    find aip132/docker/build -type d -name __pycache__ -print0 | xargs -0 -r rm -rf
+    cp examples/aip132_s3_prefix_to_gcs.py aip132/docker/build/aip132_s3_prefix_to_gcs.py
+    "${COMPOSE[@]}" up -d --build
+    echo "waiting for the Airflow API and scheduler"
+    api_ok=0
+    sched_ok=0
+    for _ in $(seq 1 90); do
+        code=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 2 http://127.0.0.1:18080/api/v2/monitor/health || true)
+        if [[ "$code" == "200" ]]; then api_ok=1; fi
+        code=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 2 http://127.0.0.1:8974/health || true)
+        if [[ "$code" == "200" ]]; then sched_ok=1; fi
+        if [[ "$api_ok" == "1" && "$sched_ok" == "1" ]]; then
+            echo "api and scheduler are up"
+            break
+        fi
+        sleep 2
+    done
+    if [[ "$api_ok" != "1" || "$sched_ok" != "1" ]]; then
+        echo "Airflow did not become healthy (api=$api_ok scheduler=$sched_ok)" >&2
+        "${COMPOSE[@]}" ps || true
+        exit 1
+    fi
+    export AIP132_E2E_REQUIRE=1
+    export AIP132_AIRFLOW_URL=http://127.0.0.1:18080
+    export AIRFLOW_HOME="${AIRFLOW_HOME:-$PWD/.airflow-aip132}"
+    export AIRFLOW__CORE__LOAD_EXAMPLES=False
+    export AIRFLOW__CORE__UNIT_TEST_MODE=True
+    "$PY" -m pytest -vv -s tests/e2e/test_aip132_scheduler.py

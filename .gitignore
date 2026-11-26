@@ -1,6 +1,10 @@
 .venv/
 .venv-aip132/
 .airflow-aip132/
+aip132/docker/logs/
+aip132/docker/.env
+aip132/docker/e2e-compose.log
+aip132/docker/build/
 __pycache__/
 *.py[cod]
 .pytest_cache/

@@ -24,7 +24,9 @@ markers from a single listing, copied keys returned, and
 extra pins Airflow 3.4.0 and the common.io, amazon, google, and
 microsoft-azure providers. Write-up: [docs/AIP-132-demo.md](docs/AIP-132-demo.md).
 `just aip132-test` runs the `file://` / `memory://` tests. `just aip132-demo`
-copies an S3 prefix to GCS when the emulators are up.
+copies an S3 prefix to GCS when the emulators are up. `just aip132-e2e`
+runs that Dag through an Airflow 3.4 scheduler and checks the XCom and an
+OpenLineage console event, then tears the stack down.
 
 ## Quick start
 

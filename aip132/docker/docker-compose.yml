@@ -1,0 +1,109 @@
+# Airflow 3.4.0 for the AIP-132 scheduler run.
+#
+# LocalExecutor runs the task inside the scheduler process tree, so there is
+# no Celery worker and no triggerer. Deferrable mode is not part of this run.
+# api-server, scheduler, and dag-processor share the host network so the
+# emulator URLs (127.0.0.1) match the host and fake-gcs-server's external URL.
+# Postgres stays on the compose network and is published on 55432.
+
+name: aip132-e2e
+
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: aip132-airflow:3.4.0
+  network_mode: host
+  env_file:
+    - .env
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg://airflow:airflow@127.0.0.1:55432/airflow
+    AIRFLOW__CORE__FERNET_KEY: ${FERNET_KEY}
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://127.0.0.1:18080/execution/
+    AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+    AIRFLOW__CORE__PARALLELISM: "4"
+    AIRFLOW__SCHEDULER__PARSING_PROCESSES: "1"
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
+    AIRFLOW__API_AUTH__JWT_SECRET: aip132-e2e-jwt-secret
+    AIRFLOW__API_AUTH__JWT_ISSUER: airflow
+    AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
+    AIRFLOW__OPENLINEAGE__DISABLED: "false"
+    AIRFLOW__OPENLINEAGE__NAMESPACE: aip132
+    AIRFLOW__OPENLINEAGE__TRANSPORT: '{"type": "console"}'
+    PYTHONPATH: /opt/airflow/aip132_src
+    AIP132_ATTACH_EMULATORS: "1"
+    S3_ENDPOINT: http://127.0.0.1:19090
+    S3_ACCESS_KEY: any
+    S3_SECRET_KEY: any
+    S3_REGION: us-east-1
+    GCS_ENDPOINT: http://127.0.0.1:14443
+    GCS_PROJECT: demo
+    STORAGE_EMULATOR_HOST: http://127.0.0.1:14443
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    ports:
+      - "55432:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+    restart: "no"
+
+  airflow-init:
+    <<: *airflow-common
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: "true"
+      _AIRFLOW_WWW_USER_CREATE: "true"
+      _AIRFLOW_WWW_USER_USERNAME: airflow
+      _AIRFLOW_WWW_USER_PASSWORD: airflow
+    command: version
+    user: "0:0"
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  airflow-apiserver:
+    <<: *airflow-common
+    command: api-server --host 0.0.0.0 --port 18080 --workers 1
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://127.0.0.1:18080/api/v2/monitor/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 18
+      start_period: 60s
+    restart: "no"
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    restart: "no"
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      airflow-apiserver:
+        condition: service_healthy
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    command: dag-processor
+    restart: "no"
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully

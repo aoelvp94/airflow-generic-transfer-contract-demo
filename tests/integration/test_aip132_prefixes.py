@@ -293,3 +293,82 @@ def test_prefix_matrix(src_flavour, dst_flavour, monkeypatch):
             overwrite=False,
         )
     assert str(prefix_err.value) == str(upstream_err.value)
+
+
+def _norm_key(key: str) -> str:
+    return key.rstrip("/")
+
+
+def _marker_bytes(emu, key: str) -> bytes:
+    candidates = [key]
+    if key.endswith("/"):
+        candidates.append(key.rstrip("/"))
+    else:
+        candidates.append(key + "/")
+    last: Exception | None = None
+    for candidate in candidates:
+        try:
+            return get_bytes(emu, candidate)
+        except Exception as exc:
+            last = exc
+    raise AssertionError(f"marker {key!r} is not readable: {last}")
+
+
+@pytest.mark.parametrize("src_flavour,dst_flavour", PAIRS)
+def test_folder_markers_copy(src_flavour, dst_flavour):
+    """``copy`` writes folder markers and returns them. ``skip`` does not."""
+    token = uuid.uuid4().hex[:8]
+    base = f"aip132-markers/{src_flavour}-{dst_flavour}-{token}"
+    src_emu = make_fs(src_flavour, bucket=SRC_BUCKET[src_flavour])
+    dst_emu = make_fs(dst_flavour, bucket=DST_BUCKET[dst_flavour])
+    clear_prefix(src_emu, base)
+    clear_prefix(dst_emu, base)
+    seed_tree_with_markers(src_emu, base)
+    _invalidate(src_flavour)
+    _invalidate(dst_flavour)
+
+    src_url = _url(src_flavour, SRC_BUCKET[src_flavour], f"{base}/")
+    copy_root = f"{base}/copied"
+    skip_root = f"{base}/skipped"
+    copied = _execute(
+        PrefixFileTransferOperator,
+        src_url,
+        _url(dst_flavour, DST_BUCKET[dst_flavour], f"{copy_root}/"),
+        source_conn_id=CONN[src_flavour],
+        dest_conn_id=CONN[dst_flavour],
+        overwrite=True,
+        keep_structure=True,
+        folder_markers="copy",
+    )
+    skipped = _execute(
+        PrefixFileTransferOperator,
+        src_url,
+        _url(dst_flavour, DST_BUCKET[dst_flavour], f"{skip_root}/"),
+        source_conn_id=CONN[src_flavour],
+        dest_conn_id=CONN[dst_flavour],
+        overwrite=True,
+        keep_structure=True,
+        folder_markers="skip",
+    )
+    _invalidate(dst_flavour)
+    native = list_keys_native(dst_emu, copy_root)
+    native_skip = list_keys_native(dst_emu, skip_root)
+    assert set(copied) == set(native), (sorted(copied), sorted(native))
+    assert {_norm_key(key) for key in copied} == {_norm_key(key) for key in native}, (copied, native)
+    assert sorted(skipped) == sorted([f"{skip_root}/a.json", f"{skip_root}/nested/b.json"])
+    assert not any(key.endswith("/") for key in skipped)
+    assert {_norm_key(key) for key in native_skip} == {
+        f"{skip_root}/a.json",
+        f"{skip_root}/nested/b.json",
+    }, native_skip
+
+    copy_rels = {_norm_key(key)[len(copy_root) + 1 :] for key in copied}
+    skip_rels = {_norm_key(key)[len(skip_root) + 1 :] for key in skipped}
+    extra = copy_rels - skip_rels
+    assert extra == {"nested"}, (copied, native, extra)
+    marker = next(key for key in copied if _norm_key(key).endswith("/nested"))
+    assert _marker_bytes(dst_emu, marker) == b""
+    assert get_bytes(dst_emu, f"{copy_root}/a.json") == b'{"id":1}'
+    assert get_bytes(dst_emu, f"{copy_root}/nested/b.json") == b'{"id":2}'
+    assert f"{copy_root}/a.json" in copied
+    assert f"{copy_root}/nested/b.json" in copied

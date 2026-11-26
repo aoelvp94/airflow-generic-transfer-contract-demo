@@ -60,10 +60,20 @@ cmd_down() {
   "${COMPOSE[@]}" down --remove-orphans || true
 }
 
+_gcs_base() {
+  # STORAGE_EMULATOR_HOST is a URL (http://host:port) in emulators.env.
+  # Older callers sometimes set a bare host:port. Accept both.
+  local host="${STORAGE_EMULATOR_HOST}"
+  if [[ "$host" != http://* && "$host" != https://* ]]; then
+    host="http://${host}"
+  fi
+  printf '%s' "$host"
+}
+
 cmd_wait() {
   load_env
   wait_http "${S3_ENDPOINT}/" "s3(s3mock)"
-  wait_http "http://${STORAGE_EMULATOR_HOST}/storage/v1/b" "gcs(fake-gcs)"
+  wait_http "$(_gcs_base)/storage/v1/b" "gcs(fake-gcs)"
   wait_http "http://127.0.0.1:10000/" "azure(azurite)"
   echo "all emulators ready"
 }
@@ -72,7 +82,7 @@ cmd_status() {
   load_env
   "${COMPOSE[@]}" ps || true
   echo "---"
-  for pair in "s3 ${S3_ENDPOINT}/" "gcs http://${STORAGE_EMULATOR_HOST}/storage/v1/b" "azure http://127.0.0.1:10000/"; do
+  for pair in "s3 ${S3_ENDPOINT}/" "gcs $(_gcs_base)/storage/v1/b" "azure http://127.0.0.1:10000/"; do
     set -- $pair
     code=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 1 "$2" || echo down)
     echo "$1 -> $code ($2)"
