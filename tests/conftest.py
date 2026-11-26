@@ -2,8 +2,16 @@ from __future__ import annotations
 
 import os
 import urllib.request
+from pathlib import Path
 
-import pytest
+# Set before any test module imports Airflow. Harmless for the other suites.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+os.environ.setdefault("AIRFLOW_HOME", str(_REPO_ROOT / ".airflow-aip132"))
+os.environ.setdefault("AIRFLOW__CORE__LOAD_EXAMPLES", "False")
+os.environ.setdefault("AIRFLOW__CORE__UNIT_TEST_MODE", "True")
+os.environ.setdefault("AIRFLOW__LOGGING__LOGGING_LEVEL", "ERROR")
+
+import pytest  # noqa: E402
 
 from generic_transfer.adapters.emulators import load_emulator_env
 

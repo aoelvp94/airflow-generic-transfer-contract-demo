@@ -9,9 +9,22 @@ that shape for the Apache Airflow dev@ thread
 [DISCUSS] One transfer operator on hook contracts instead of one operator per
 source/destination pair
 ([thread](https://lists.apache.org/thread/5nl6g6oosr5sg69nrfy151fwy5b6j5zf),
-[Aldo Escobar's reply](https://lists.apache.org/thread/2f26z6sznm9tr5hzsmlq2wp3m09qx0ko)).
-It does not install Airflow. It uses an in-process fake HTTP API and local
-object-store emulators. Apache-2.0. English throughout.
+[reply on the thread](https://lists.apache.org/thread/2f26z6sznm9tr5hzsmlq2wp3m09qx0ko)).
+The default install does not include Airflow. It uses an in-process fake HTTP
+API and local object-store emulators. Apache-2.0. English throughout.
+
+## AIP-132 phase 1
+
+[AIP-132](https://cwiki.apache.org/confluence/spaces/AIRFLOW/pages/467436039/AIP-132+One+transfer+operator+on+hook+contracts)
+phase 1 extends `FileTransferOperator` so one operator can copy a prefix.
+`PrefixFileTransferOperator` (`src/aip132/file_transfer.py`) is that operator
+on Airflow 3.4: prefix and glob, skip or overwrite, keep or flatten, folder
+markers from a single listing, copied keys returned, and
+`ObjectStoragePath.copy` when both ends share a store. The optional `aip132`
+extra pins Airflow 3.4.0 and the common.io, amazon, google, and
+microsoft-azure providers. Write-up: [docs/AIP-132-demo.md](docs/AIP-132-demo.md).
+`just aip132-test` runs the `file://` / `memory://` tests. `just aip132-demo`
+copies an S3 prefix to GCS when the emulators are up.
 
 ## Quick start
 
@@ -80,7 +93,8 @@ docs/                     narrative write-ups (index: docs/README.md)
 emulators/                compose file, env, lifecycle script, fake HTTP API
 shims/                    Airflow file-contract shims (GCS, S3, Azure, 9 pairs)
 experiments/              S3ToAzureBlobStorageOperator replace=False repro
-examples/                 TaskFlow-shaped hook usage (no scheduler required)
+examples/                 TaskFlow-shaped hook usage, and the AIP-132 S3-to-GCS Dag
+src/aip132/               PrefixFileTransferOperator (Airflow 3, optional extra)
 ```
 
 Public names are re-exported from the package root:
@@ -212,10 +226,11 @@ not the row count.
 
 ## Caveats
 
-- This is a prototype. The operators are plain Python classes with the same
-  param surface a real operator would expose. They are not
-  `BaseOperator` subclasses, and nothing here is wired into the Airflow
-  scheduler.
+- The operators under `src/generic_transfer/` are plain Python classes with
+  the same param surface a real operator would expose. They are not wired
+  into the Airflow scheduler. `PrefixFileTransferOperator` in `src/aip132/`
+  subclasses `FileTransferOperator`; see
+  [docs/AIP-132-demo.md](docs/AIP-132-demo.md).
 - Emulators on one machine are not a cloud. The scale host is a single
   8-core Xeon with 15.6 GiB RAM. Times without injected latency are client
   and emulator CPU. `wire_latency` adds a fixed 20 ms delay; it is not a

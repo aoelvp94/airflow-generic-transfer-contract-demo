@@ -1,4 +1,6 @@
 .venv/
+.venv-aip132/
+.airflow-aip132/
 __pycache__/
 *.py[cod]
 .pytest_cache/
