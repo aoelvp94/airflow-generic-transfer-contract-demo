@@ -1,10 +1,9 @@
-"""OpenLineage dataset names for ``PrefixFileTransferOperator``.
+"""OpenLineage dataset names for the prefix copy.
 
-The operator emits one input dataset and one output dataset on start, naming
-the source and destination paths it was given (the prefix, or the single
-file). On complete it emits one input and one output per object that was
-actually copied. Start does not list: the copy itself lists once, inside
-``execute``.
+:func:`start_facets` names the source and destination paths the task was
+given (the prefix, or the single file) and does not list. :func:`complete_facets`
+names each object that was actually copied. The operator calls these two
+functions. The copy itself lists once, inside ``execute``, not here.
 
 Names follow the OpenLineage dataset spec
 (https://openlineage.io/docs/spec/naming):
@@ -125,6 +124,123 @@ def operator_lineage(
         inputs.append(Dataset(namespace=src_ns, name=src_name))
         outputs.append(Dataset(namespace=dst_ns, name=dst_name))
     return OperatorLineage(inputs=inputs, outputs=outputs)
+
+
+_COPIED: dict[tuple[str | None, str | None], list[tuple[ObjectStoragePath, ObjectStoragePath]]] = {}
+
+
+def start_facets(src: str | ObjectStoragePath, dst: str | ObjectStoragePath) -> Any:
+    """One input and one output for the paths the task was given. Does not list."""
+    return lineage_from_uris(endpoint_uri(src), endpoint_uri(dst))
+
+
+def record_copied(
+    operator: Any,
+    pairs: list[tuple[ObjectStoragePath, ObjectStoragePath]],
+    result: list[str] | None,
+) -> None:
+    """Remember the pairs ``execute`` copied so the complete hook can name them.
+
+    The OpenLineage listener may hold a different operator instance in the
+    same process. A listener in another process reads the task return value
+    instead.
+    """
+    operator._ol_pairs = list(pairs)
+    operator._ol_output_names = list(result) if isinstance(result, list) else None
+    operator._ol_ran = True
+    if operator.dag_id and operator.task_id:
+        _COPIED[(operator.dag_id, operator.task_id)] = list(pairs)
+
+
+def complete_facets(operator: Any, task_instance: Any = None) -> Any:
+    """One dataset pair per copied object.
+
+    Markers are included only when they were copied. Keys left in place
+    because ``overwrite`` is false are absent. When this hook cannot see the
+    copy (no ``execute`` in this process and no return value on
+    ``task_instance``), it uses the start datasets.
+    """
+    found = _copied_pairs(operator, task_instance)
+    if found is None:
+        return start_facets(operator.src, operator.dst)
+    pairs, names = found
+    return operator_lineage(pairs, output_names=names)
+
+
+def _copied_pairs(
+    operator: Any, task_instance: Any
+) -> tuple[list[tuple[ObjectStoragePath, ObjectStoragePath]], list[str] | None] | None:
+    if getattr(operator, "_ol_ran", False):
+        pairs = list(getattr(operator, "_ol_pairs", []))
+        names = getattr(operator, "_ol_output_names", None)
+        if names is not None and len(names) != len(pairs):
+            names = None
+        return pairs, names
+    cached = _COPIED.get((operator.dag_id, operator.task_id))
+    if cached is not None:
+        return list(cached), None
+    keys = _xcom_return_keys(task_instance, operator.task_id)
+    if keys is None:
+        return None
+    return _pairs_from_dest_keys(operator, keys), keys
+
+
+def _pairs_from_dest_keys(
+    operator: Any, dest_keys: list[str]
+) -> list[tuple[ObjectStoragePath, ObjectStoragePath]]:
+    from aip132.path_ops import child_path, resolve_storage_path
+
+    src = resolve_storage_path(operator.src, operator.source_conn_id)
+    dst = resolve_storage_path(operator.dst, operator.dest_conn_id)
+    dst_key = dst.key
+    pairs: list[tuple[ObjectStoragePath, ObjectStoragePath]] = []
+    for dest_key in dest_keys:
+        dest_path = _replace_key(dst, dest_key)
+        if operator.keep_structure and dst_key and dest_key.startswith(dst_key):
+            rel = dest_key[len(dst_key) :]
+            src_path = child_path(src, rel) if rel else src
+        elif operator.keep_structure and not dst_key:
+            src_path = child_path(src, dest_key)
+        else:
+            src_path = src
+        pairs.append((src_path, dest_path))
+    return pairs
+
+
+def _replace_key(root: ObjectStoragePath, key: str) -> ObjectStoragePath:
+    """Same bucket and connection as ``root``, with ``key`` as the object key."""
+    protocol = root.protocol or "file"
+    text = key.lstrip("/")
+    if root.bucket:
+        uri = f"{protocol}://{root.bucket}/{text}"
+    else:
+        uri = f"{protocol}:///{text}"
+    return ObjectStoragePath(uri, conn_id=root.conn_id)
+
+
+def _xcom_return_keys(task_instance: Any, task_id: str | None) -> list[str] | None:
+    """Return value pushed by ``execute``, when the task instance exposes it."""
+    if task_instance is None:
+        return None
+    pull = getattr(task_instance, "xcom_pull", None)
+    value: Any = None
+    if callable(pull):
+        try:
+            value = pull(task_ids=task_id, key="return_value")
+        except TypeError:
+            try:
+                value = pull(key="return_value")
+            except Exception:
+                return None
+        except Exception:
+            return None
+    elif isinstance(getattr(task_instance, "xcom", None), dict):
+        value = task_instance.xcom.get("return_value")
+    else:
+        return None
+    if isinstance(value, list) and all(isinstance(item, str) for item in value):
+        return value
+    return None
 
 
 def _scheme(uri: str | None) -> str:

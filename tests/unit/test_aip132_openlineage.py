@@ -21,7 +21,8 @@ pytest.importorskip("airflow.providers.openlineage.extractors")
 from airflow.providers.common.io.operators.file_transfer import FileTransferOperator
 from airflow.sdk import DAG, ObjectStoragePath
 
-from aip132.file_transfer import PrefixFileTransferOperator, child_path, resolve_storage_path
+from aip132.file_transfer import PrefixFileTransferOperator
+from aip132.path_ops import child_path, resolve_storage_path
 from aip132.lineage import identity_uri, openlineage_identity
 
 pytestmark = pytest.mark.aip132
@@ -143,7 +144,7 @@ def test_complete_names_each_copied_file_and_skips_directories(tmp_path: Path):
 
 
 def test_complete_includes_a_copied_marker_key(tmp_path: Path, monkeypatch):
-    from aip132 import file_transfer as ft
+    from aip132 import path_ops
 
     src = tmp_path / "src"
     dst = tmp_path / "dst"
@@ -153,15 +154,15 @@ def test_complete_includes_a_copied_marker_key(tmp_path: Path, monkeypatch):
     src_uri = src.resolve().as_uri() + "/"
     dst_uri = dst.resolve().as_uri() + "/"
     root = resolve_storage_path(src_uri, None)
-    prefix = ft._fs_prefix(root.fs, root.path)
-    real_list = ft.list_prefix_once
+    prefix = path_ops._fs_prefix(root.fs, root.path)
+    real_list = path_ops.list_entries
 
     def _listing(path, _real=real_list, _prefix=prefix):
         rows = _real(path)
         rows.append({"name": f"{_prefix}/hold", "size": 0, "type": "file", "is_marker": True})
         return rows
 
-    monkeypatch.setattr(ft, "list_prefix_once", _listing)
+    monkeypatch.setattr(path_ops, "list_entries", _listing)
     op = _operator(src_uri, dst_uri, overwrite=True, folder_markers="copy")
     copied = op.execute({})
     assert copied is not None

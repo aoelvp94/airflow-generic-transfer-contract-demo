@@ -5,16 +5,50 @@ phase 1 extends `common.io` `FileTransferOperator` so one operator can copy a
 prefix between object stores. The rollout plan's first demo is: copy an S3
 prefix, handle folder markers, and return the keys that were copied.
 
-This repository does that on Airflow 3.4 with
-`PrefixFileTransferOperator` (`src/aip132/file_transfer.py`). The operator
-subclasses `FileTransferOperator` and is a real `BaseOperator`. The copy
-logic is plain functions, so a `@task` can call `copy_files` and get the same
-behaviour. The example Dag is `examples/aip132_s3_prefix_to_gcs.py`.
+This repository does that on Airflow 3.4. The copy lives in path helpers
+(`src/aip132/path_ops.py`) that are shaped to move onto `ObjectStoragePath`
+or the `common.io` helpers that path calls. `FileTransferOperator` in `src/aip132/file_transfer.py` subclasses
+the installed operator only so this demo can run without editing site-packages.
+It forwards arguments and emits OpenLineage. `PrefixFileTransferOperator` is
+that same class, kept so existing imports and the example Dag do not change.
+The example Dag is `examples/aip132_s3_prefix_to_gcs.py`.
 
 Upstream `FileTransferOperator` still copies a single object via
 `src.copy(dst)`. A single-file `src` in this operator does that same call:
 `overwrite=False` raises when the destination file exists, and `execute`
 returns `None`.
+
+## Layers
+
+The contract and the transfer live in the path helpers. The operator forwards
+arguments, calls `copy_path`, and emits OpenLineage.
+
+| Module | Role |
+|---|---|
+| `src/aip132/path_ops.py` | `list_entries`, `classify_folder_markers`, `plan_prefix_copy`, `copy_prefix`, `copy_path`. One `find`, marker policy, glob, overwrite, `keep_structure`, same-store `ObjectStoragePath.copy` or a cross-store stream, and the copied keys. |
+| `src/aip132/lineage.py` | OpenLineage names. Start is the configured prefix or file and does not list. Complete is one dataset per copied key. Single-file `file` / `s3` / `gs` matches the installed operator. |
+| `src/aip132/file_transfer.py` | Thin `FileTransferOperator`. Checks arguments, calls `copy_path`, records the pairs for lineage. `PrefixFileTransferOperator` is an alias. |
+
+A `@task` calls `copy_path` and does not import the operator:
+
+```python
+from airflow.sdk import task
+from aip132.path_ops import copy_path
+
+@task
+def copy_sales(src: str, dst: str) -> list[str] | None:
+    return copy_path(src, dst, source_conn_id="aws", dest_conn_id="gcp")
+```
+
+`copy_files` is `copy_path`. Older imports of that name keep working.
+
+Same-store copies use `ObjectStoragePath.copy` (`fs.copy`). Cross-store copies
+use `shutil.copyfileobj`, which is the loop inside `ObjectStoragePath._cp_file`.
+The helper opens the planned source and destination itself. `_cp_file` stats
+`is_dir` and, when the destination key looks like a directory, appends the
+source key. A planned key is already the object key, including a trailing
+slash on a folder marker, so that rewrite must not run. The marker write uses
+`fs.pipe` when the slash has to be kept, because `s3fs.open` drops it.
 
 ## Run
 
@@ -26,11 +60,11 @@ installs them into `.venv-aip132` with the Airflow 3.4.0 constraint file.
 
 ```bash
 just aip132-test
-# file:// and memory:// only, including OpenLineage facets.
-# Prints pytest's own summary.
+# file:// and memory:// operator tests, OpenLineage facets, and the
+# conformance suite. Prints pytest's own summary.
 
 just up          # S3Mock, fake-gcs-server, Azurite
-.venv-aip132/bin/python -m pytest -v -m integration tests/integration/test_aip132_prefixes.py
+.venv-aip132/bin/python -m pytest -v -m 'integration and aip132' tests/integration
 just aip132-demo # S3 prefix -> GCS, markers skipped, keys printed
 just down
 
@@ -121,9 +155,53 @@ start hook does not read the name from the path object.
 The OpenLineage provider is imported inside the hooks. It is pinned in the
 `aip132` extra and is not required to import the operator.
 
-## Helpers
+## Conformance suite
 
-`copy_files` is the function the operator calls. `list_prefix_once`,
-`classify_folder_markers`, `plan_prefix_copy`, `copy_object`, `stream_copy`,
-and `copy_single_file` are the smaller pieces. `examples/aip132_s3_prefix_to_gcs.py`
-shows `copy_s3_prefix_to_gcs` as a `@task` body with the same arguments.
+Folder markers, overwrite, glob, structure, and the returned keys are one
+behaviour, so they are one test class. `tests/conformance/contract.py`
+defines `StorageContract` (`__test__` is false, so pytest does not collect it
+on its own). A backend subclasses it and provides three fixtures:
+
+| Fixture | What it yields |
+|---|---|
+| `pair` | Every ordered pair that backend should copy, including same-store. |
+| `same_pair` | Pairs that share a protocol and a connection id. The copy must call `ObjectStoragePath.copy`. |
+| `cross_pair` | Pairs that do not. The copy must stream and must not call `ObjectStoragePath.copy`. |
+
+Each case calls `copy_path` directly. The cases are: single-file parity with
+the installed `FileTransferOperator` (return `None`, same overwrite error),
+prefix copy, glob filtering, `overwrite=False` leaving an existing key
+unchanged, `keep_structure` true and false, `folder_markers=skip` and
+`folder_markers=copy` (a zero-byte file with no children is copied either
+way; a local directory is not an object key), returned keys against a fresh
+listing, and the operator returning the same keys as `copy_path`.
+
+`tests/conformance/test_storage_contract.py` runs that class on `file` and
+`memory`, including `file` to `memory`. `tests/integration/test_aip132_conformance.py`
+runs it on `s3`, `gs` (`gcs` in the emulator fixture), and `abfs`, all nine
+pairs. A new backend adds a subclass and the three fixtures. It does not
+add a new test body.
+
+`list_prefix_once` remains as an alias of `list_entries` so older call sites
+keep that name. `examples/aip132_s3_prefix_to_gcs.py` shows both the operator
+task and a `@task` body that calls `copy_path`.
+
+## Upstream pull requests
+
+The helpers belong next to `ObjectStoragePath`, not inside the operator. The
+task SDK (`airflow.sdk.io`) can be imported by `common.io`. The task SDK
+cannot import a provider. That split is the review boundary. This demo keeps
+the same split under `src/aip132/` without patching the installed SDK.
+
+Suggested incremental PRs against `apache/airflow`:
+
+1. **Task SDK, pure markers.** `classify_folder_markers` and `collapse_marker_aliases`, no filesystem. Tests are synthetic rows: a directory row, a trailing slash, a zero-byte name with a child, a zero-byte file with no child, the double listing `nested` plus `nested/`, and the adlfs row that drops the slash.
+2. **Task SDK, one listing.** `list_entries`: one `find(detail=True, withdirs=True)`, then the classifier. Assert it does not call `info` or `exists`.
+3. **Task SDK, the plan.** `plan_prefix_copy`: `match_glob`, `keep_structure`, `folder_markers`. No bytes move. `file` and `memory` directory rows are not object keys and stay out of the plan even when the policy is `copy`.
+4. **Task SDK, copy one planned key.** Same-store `ObjectStoragePath.copy`. Cross-store is the `shutil.copyfileobj` loop from `_cp_file`, opening the planned keys rather than calling `_cp_file` (that method stats `is_dir` and may append the source key). A marker keeps the trailing slash the listing stored (`fs.pipe` where `open` strips it).
+5. **Task SDK, `copy_prefix` and `copy_path`.** `overwrite=False` compares the plan to one destination listing and skips those keys. The return value is the copied destination keys. A single file matches today's `FileTransferOperator.execute` and returns `None`. A `@task` can call `copy_path` with no operator imported.
+6. **common.io, the operator.** `FileTransferOperator` grows `match_glob`, `keep_structure`, `folder_markers`, and `chunk_size`, calls `copy_path`, and returns the keys. No subclass, and no `isinstance` or per-backend branch in the operator. Single-file behaviour stays.
+7. **common.io, OpenLineage.** Start names the configured path and does not list. Complete names each copied key. `s3` / `gs` / `abfss` / `wasbs` as in `src/aip132/lineage.py`. Single-file `file`, `s3`, and `gs` stay identical to today's start facets.
+8. **common.io tests, the conformance class.** The `StorageContract` mixin, parametrized by `file` and `memory` in the unit job and by `s3`, `gs`, and `abfs` where those backends are configured. New stores plug in by fixture, not by a new test module.
+
+PRs 1–5 are the path. PRs 6–8 are the operator and the proof that every registered store behaves the same way. Each PR is reviewable without the later ones: 1 has no I/O, 2 and 3 do not write, 4 writes one key, 5 is the loop a caller can use before the operator changes.

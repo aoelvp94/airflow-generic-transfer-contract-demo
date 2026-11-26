@@ -20,14 +20,15 @@ pytest.importorskip("airflow.providers.common.io.operators.file_transfer")
 from airflow.providers.common.io.operators.file_transfer import FileTransferOperator
 from airflow.sdk import BaseOperator, DAG, ObjectStoragePath
 
-from aip132.file_transfer import (
-    PrefixFileTransferOperator,
+from aip132.file_transfer import PrefixFileTransferOperator
+from aip132.path_ops import (
     _attach_memory,
     _copy_stream,
     child_path,
     classify_folder_markers,
     collapse_marker_aliases,
     copy_files,
+    copy_path,
     list_destination_names,
     list_prefix_once,
     resolve_storage_path,
@@ -118,8 +119,12 @@ def _seed(src: str) -> None:
 
 
 def test_operator_subclasses_file_transfer_and_base_operator():
+    from aip132.file_transfer import FileTransferOperator as DemoFileTransferOperator
+
+    assert PrefixFileTransferOperator is DemoFileTransferOperator
     assert issubclass(PrefixFileTransferOperator, FileTransferOperator)
     assert issubclass(PrefixFileTransferOperator, BaseOperator)
+    assert copy_files is copy_path
 
 
 def test_classify_folder_markers_uses_the_listing_only():
@@ -254,7 +259,7 @@ def test_folder_markers_copy_keeps_real_marker_keys(store, monkeypatch):
     they stay out of the returned keys. A zero-byte key that the listing
     classified as a marker is copied as-is (no extra slash added).
     """
-    from aip132 import file_transfer as ft
+    from aip132 import path_ops
 
     _backend, src, dst = store
     dst_skip = dst[:-1] + "-skip/"
@@ -263,8 +268,8 @@ def test_folder_markers_copy_keeps_real_marker_keys(store, monkeypatch):
     _mkdir(src, "nested")
     _write(src, "a.txt", b"alpha")
     _write(src, "nested/b.txt", b"beta")
-    prefix = ft._fs_prefix(_root(src).fs, _root(src).path)
-    real_list = ft.list_prefix_once
+    prefix = path_ops._fs_prefix(_root(src).fs, _root(src).path)
+    real_list = path_ops.list_entries
 
     def _listing(path, _real=real_list, _prefix=prefix):
         rows = _real(path)
@@ -274,7 +279,7 @@ def test_folder_markers_copy_keeps_real_marker_keys(store, monkeypatch):
         )
         return rows
 
-    monkeypatch.setattr(ft, "list_prefix_once", _listing)
+    monkeypatch.setattr(path_ops, "list_entries", _listing)
     copied = _execute(
         PrefixFileTransferOperator,
         src,
