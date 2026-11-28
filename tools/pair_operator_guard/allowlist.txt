@@ -1,0 +1,5 @@
+# Class names that may still match *To*Operator.
+# A bare name allowlists that class in every scanned file.
+# A path-qualified entry (relative/path.py:ClassName) allowlists one file.
+# This repository's src/ tree defines no *To*Operator class, so the list is empty.
+# FileTransferOperator does not match the pattern and is not listed.
