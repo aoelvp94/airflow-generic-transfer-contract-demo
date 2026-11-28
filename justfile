@@ -341,3 +341,12 @@ aip132-e2e:
     export AIRFLOW__CORE__LOAD_EXAMPLES=False
     export AIRFLOW__CORE__UNIT_TEST_MODE=True
     "$PY" -m pytest -vv -s tests/e2e/test_aip132_scheduler.py
+
+# singledispatch versus the Protocol checks. No Airflow extra.
+singledispatch-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export PATH="${HOME}/.local/bin:${PATH}"
+    uv run --no-project --python 3.12 --with pytest \
+        python -m pytest -v --noconftest tests/unit/test_singledispatch_vs_protocol.py
+    uv run --no-project --python 3.12 python examples/singledispatch_vs_protocol.py

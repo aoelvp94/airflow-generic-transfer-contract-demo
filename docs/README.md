@@ -7,6 +7,7 @@ commands that regenerate them are in the root README.
 | Doc | What it answers |
 |---|---|
 | [AIP-132-demo.md](AIP-132-demo.md) | Phase-1 prefix copy: path helpers, a thin `FileTransferOperator`, the conformance suite, OpenLineage names, and the Airflow 3.4 scheduler run. |
+| [singledispatch-vs-protocol.md](singledispatch-vs-protocol.md) | `functools.singledispatch` can match a Protocol and still does not select a copy by source/destination pair. |
 | [PAIR_AUDIT.md](PAIR_AUDIT.md) | What fraction of Airflow's pair transfer operators map onto one generic operator. Snapshot of the AST audit (15 / 43 / 26 of 84 concrete classes). |
 | [../audits/results/PAIR_AUDIT.csv](../audits/results/PAIR_AUDIT.csv) | One row per operator class. |
 | [../audits/results/CAPABILITY_RANK.md](../audits/results/CAPABILITY_RANK.md) | Which shared capabilities unlock the `needs_capability` bucket (sole-blocker and greedy set-cover). |
