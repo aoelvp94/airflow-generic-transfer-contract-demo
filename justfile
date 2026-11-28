@@ -17,6 +17,18 @@ status:
 test:
     .venv/bin/pytest -v -m 'not integration'
 
+# Flag mapped per-pair transfer operators (AIR331 prototype).
+# Autofix is only the single-object S3CopyObjectOperator shape.
+# A real rule would live in Ruff's Rust AIR implementation.
+air-transfer-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export PATH="${HOME}/.local/bin:${PATH}"
+    uv run --no-project --python 3.12 --with pytest \
+        python -m pytest -v --noconftest tests/unit/test_air_transfer_check.py
+    uv run --no-project --python 3.12 \
+        python -m tools.air_transfer_check examples
+
 test-integration:
     .venv/bin/pytest -v -m integration
 
