@@ -576,7 +576,7 @@ def copy_prefix(
         folder_markers=folder_markers,
     )
     existing = None if overwrite else list_destination_names(dst)
-    copied: list[str] = []
+    copied: list[tuple[str, ObjectStoragePath, ObjectStoragePath]] = []
     for item in planned:
         if existing is not None and _known(item.destination, existing):
             continue
@@ -592,13 +592,14 @@ def copy_prefix(
         # ``ObjectStoragePath.key`` drops the slash the listing stored.
         if slash and key and not key.endswith("/"):
             key = key + "/"
-        copied.append(key)
-        if lineage is not None:
-            lineage.append((item.source, item.destination))
+        copied.append((key, item.source, item.destination))
         if existing is not None:
             existing |= _forms(item.destination.path)
             existing |= _forms(item.destination.key)
-    return sorted(set(copied))
+    copied.sort(key=lambda row: row[0])
+    if lineage is not None:
+        lineage.extend((src, dst) for _, src, dst in copied)
+    return [key for key, _, _ in copied]
 
 
 def copy_path(

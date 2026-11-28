@@ -114,16 +114,55 @@ def operator_lineage(
     from airflow.providers.common.compat.openlineage.facet import Dataset
     from airflow.providers.openlineage.extractors import OperatorLineage
 
+    name_by_form: dict[str, str] = {}
+    if output_names is not None:
+        for name in output_names:
+            for form in _name_forms(name):
+                name_by_form.setdefault(form, name)
+
     inputs = []
     outputs = []
-    for index, (src, dst) in enumerate(pairs):
+    for src, dst in pairs:
         src_ns, src_name = openlineage_identity(src)
         dst_ns, dst_name = openlineage_identity(dst)
         if output_names is not None:
-            dst_name = output_names[index]
+            mapped = _mapped_output_name(dst, dst_name, name_by_form)
+            if mapped is not None:
+                dst_name = mapped
         inputs.append(Dataset(namespace=src_ns, name=src_name))
         outputs.append(Dataset(namespace=dst_ns, name=dst_name))
     return OperatorLineage(inputs=inputs, outputs=outputs)
+
+
+def _name_forms(name: str) -> list[str]:
+    forms = [name]
+    trimmed = name.rstrip("/")
+    bare = trimmed.lstrip("/")
+    for form in (trimmed, bare, "/" + bare if bare else "", name if name.endswith("/") else name + "/"):
+        if form and form not in forms:
+            forms.append(form)
+    return forms
+
+
+def _mapped_output_name(
+    dst: ObjectStoragePath, dst_name: str, name_by_form: dict[str, str]
+) -> str | None:
+    """Return the recorded destination key for ``dst``, if any.
+
+    Matching is by key form, not by position in ``output_names``. A trailing
+    slash stored on the returned key is preserved.
+    """
+    candidates = [dst_name, dst.key, getattr(dst, "path", "")]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        for form in _name_forms(str(candidate)):
+            if form in name_by_form:
+                return name_by_form[form]
+    for form, name in name_by_form.items():
+        if form.endswith(dst_name) or (dst_name and dst_name.endswith(form)):
+            return name
+    return None
 
 
 _COPIED: dict[tuple[str | None, str | None], list[tuple[ObjectStoragePath, ObjectStoragePath]]] = {}

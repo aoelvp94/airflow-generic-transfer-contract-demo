@@ -192,3 +192,63 @@ def test_complete_reconstructs_pairs_from_xcom_without_execute(tmp_path: Path):
     assert _ids(fresh.get_openlineage_facets_on_complete(_XCom(None))) == _ids(
         fresh.get_openlineage_facets_on_start()
     )
+
+def test_complete_pairs_inputs_to_outputs_when_flattened(tmp_path: Path):
+    """Returned keys sort by destination; lineage must not zip that with source order."""
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    (src / "z").mkdir(parents=True)
+    (src / "y").mkdir(parents=True)
+    dst.mkdir()
+    (src / "z" / "a.csv").write_bytes(b"a")
+    (src / "b.csv").write_bytes(b"b")
+    (src / "y" / "c.csv").write_bytes(b"c")
+    src_uri = src.resolve().as_uri() + "/"
+    dst_uri = dst.resolve().as_uri() + "/"
+    op = _operator(src_uri, dst_uri, overwrite=True, keep_structure=False)
+    copied = op.execute({})
+    assert copied is not None
+    assert [Path(name).name for _ns, name in _ids(op.get_openlineage_facets_on_complete(None))[1]] == [
+        "a.csv",
+        "b.csv",
+        "c.csv",
+    ]
+    inputs, outputs = _ids(op.get_openlineage_facets_on_complete(None))
+    paired = {Path(out).name: Path(inp).as_posix() for (_ns, inp), (__ns, out) in zip(inputs, outputs)}
+    assert paired["a.csv"].endswith("z/a.csv")
+    assert paired["b.csv"].endswith("b.csv")
+    assert paired["c.csv"].endswith("y/c.csv")
+    assert [name for _ns, name in outputs] == copied
+
+
+def test_complete_pairs_marker_keys_with_keep_structure(tmp_path: Path, monkeypatch):
+    """A trailing slash on a marker key must stay attached to that same input."""
+    from aip132 import path_ops
+
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    src.mkdir()
+    dst.mkdir()
+    (src / "b.txt").write_bytes(b"beta")
+    (src / "a.txt").write_bytes(b"alpha")
+    src_uri = src.resolve().as_uri() + "/"
+    dst_uri = dst.resolve().as_uri() + "/"
+    root = resolve_storage_path(src_uri, None)
+    prefix = path_ops._fs_prefix(root.fs, root.path)
+    real_list = path_ops.list_entries
+
+    def _listing(path, _real=real_list, _prefix=prefix):
+        rows = _real(path)
+        rows.append({"name": f"{_prefix}/hold/", "size": 0, "type": "file", "is_marker": True})
+        return rows
+
+    monkeypatch.setattr(path_ops, "list_entries", _listing)
+    op = _operator(src_uri, dst_uri, overwrite=True, keep_structure=True, folder_markers="copy")
+    copied = op.execute({})
+    assert copied is not None
+    inputs, outputs = _ids(op.get_openlineage_facets_on_complete(None))
+    assert [name for _ns, name in outputs] == copied
+    paired = list(zip(inputs, outputs))
+    marker = [((ins, inn), (ons, onn)) for (ins, inn), (ons, onn) in paired if onn.endswith("hold/")]
+    assert marker, copied
+    assert marker[0][0][1].rstrip("/").endswith("hold")
