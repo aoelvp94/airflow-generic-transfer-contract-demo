@@ -135,7 +135,7 @@ class FileTransferOperator(_FileTransferOperator):
             chunk_size=self.chunk_size,
             lineage=pairs,
         )
-        record_copied(self, pairs, result)
+        record_copied(self, pairs, result, context=context)
         return result
 
     def get_openlineage_facets_on_start(self) -> Any:

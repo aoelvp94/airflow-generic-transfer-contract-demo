@@ -165,7 +165,29 @@ def _mapped_output_name(
     return None
 
 
-_COPIED: dict[tuple[str | None, str | None], list[tuple[ObjectStoragePath, ObjectStoragePath]]] = {}
+def _lineage_cache_key(
+    operator: Any, context: Any = None, task_instance: Any = None
+) -> tuple[str | None, str | None, str | None, int | None]:
+    """Scope in-process lineage by dag, task, run, and map index."""
+    run_id: str | None = None
+    map_index: int | None = None
+    if isinstance(context, dict):
+        run_id = context.get("run_id")
+        ti = context.get("ti") or context.get("task_instance")
+        if ti is not None:
+            run_id = run_id or getattr(ti, "run_id", None)
+            map_index = getattr(ti, "map_index", None)
+    if task_instance is not None:
+        run_id = run_id or getattr(task_instance, "run_id", None)
+        if map_index is None:
+            map_index = getattr(task_instance, "map_index", None)
+    return (operator.dag_id, operator.task_id, run_id, map_index)
+
+
+_COPIED: dict[
+    tuple[str | None, str | None, str | None, int | None],
+    tuple[list[tuple[ObjectStoragePath, ObjectStoragePath]], list[str] | None],
+] = {}
 
 
 def start_facets(src: str | ObjectStoragePath, dst: str | ObjectStoragePath) -> Any:
@@ -177,18 +199,21 @@ def record_copied(
     operator: Any,
     pairs: list[tuple[ObjectStoragePath, ObjectStoragePath]],
     result: list[str] | None,
+    context: Any = None,
 ) -> None:
     """Remember the pairs ``execute`` copied so the complete hook can name them.
 
     The OpenLineage listener may hold a different operator instance in the
     same process. A listener in another process reads the task return value
-    instead.
+    instead. The in-process cache is keyed by dag, task, run, and map index
+    so mapped tasks and repeated runs do not reuse each other's pairs.
     """
+    names = list(result) if isinstance(result, list) else None
     operator._ol_pairs = list(pairs)
-    operator._ol_output_names = list(result) if isinstance(result, list) else None
+    operator._ol_output_names = names
     operator._ol_ran = True
     if operator.dag_id and operator.task_id:
-        _COPIED[(operator.dag_id, operator.task_id)] = list(pairs)
+        _COPIED[_lineage_cache_key(operator, context)] = (list(pairs), names)
 
 
 def complete_facets(operator: Any, task_instance: Any = None) -> Any:
@@ -215,9 +240,10 @@ def _copied_pairs(
         if names is not None and len(names) != len(pairs):
             names = None
         return pairs, names
-    cached = _COPIED.get((operator.dag_id, operator.task_id))
+    cached = _COPIED.get(_lineage_cache_key(operator, task_instance=task_instance))
     if cached is not None:
-        return list(cached), None
+        pairs, names = cached
+        return list(pairs), names
     keys = _xcom_return_keys(task_instance, operator.task_id)
     if keys is None:
         return None

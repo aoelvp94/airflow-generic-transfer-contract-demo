@@ -252,3 +252,46 @@ def test_complete_pairs_marker_keys_with_keep_structure(tmp_path: Path, monkeypa
     marker = [((ins, inn), (ons, onn)) for (ins, inn), (ons, onn) in paired if onn.endswith("hold/")]
     assert marker, copied
     assert marker[0][0][1].rstrip("/").endswith("hold")
+
+def test_in_process_lineage_cache_is_scoped_by_run_and_map_index(tmp_path: Path):
+    from aip132.lineage import complete_facets, record_copied
+    from airflow.sdk import ObjectStoragePath
+
+    class _Op:
+        def __init__(self) -> None:
+            self.dag_id = "dag"
+            self.task_id = "copy"
+            self.src = (tmp_path / "src").resolve().as_uri() + "/"
+            self.dst = (tmp_path / "dst").resolve().as_uri() + "/"
+            self.source_conn_id = None
+            self.dest_conn_id = None
+            self.keep_structure = True
+
+    src_a = ObjectStoragePath((tmp_path / "src" / "a.txt").resolve().as_uri())
+    dst_a = ObjectStoragePath((tmp_path / "dst" / "a.txt").resolve().as_uri())
+    src_b = ObjectStoragePath((tmp_path / "src" / "b.txt").resolve().as_uri())
+    dst_b = ObjectStoragePath((tmp_path / "dst" / "b.txt").resolve().as_uri())
+    first, second, reader = _Op(), _Op(), _Op()
+
+    record_copied(
+        first,
+        [(src_a, dst_a)],
+        [dst_a.key],
+        context={"run_id": "run1", "ti": type("TI", (), {"map_index": 0, "run_id": "run1"})()},
+    )
+    record_copied(
+        second,
+        [(src_b, dst_b)],
+        [dst_b.key],
+        context={"run_id": "run1", "ti": type("TI", (), {"map_index": 1, "run_id": "run1"})()},
+    )
+
+    # Reader did not execute; it must use the cache, not first._ol_ran.
+    mapped0 = type("TI", (), {"map_index": 0, "run_id": "run1"})()
+    mapped1 = type("TI", (), {"map_index": 1, "run_id": "run1"})()
+    _, outputs0 = _ids(complete_facets(reader, mapped0))
+    _, outputs1 = _ids(complete_facets(reader, mapped1))
+    assert any(name.endswith("a.txt") for _ns, name in outputs0)
+    assert not any(name.endswith("b.txt") for _ns, name in outputs0)
+    assert any(name.endswith("b.txt") for _ns, name in outputs1)
+    assert not any(name.endswith("a.txt") for _ns, name in outputs1)
