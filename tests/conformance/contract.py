@@ -101,6 +101,19 @@ class StorageContract:
         assert "a.txt" in relatives(pair.dst, replaced)
         assert pair.dst.read("a.txt") == b"changed"
 
+    def test_flatten_collision_raises_before_copying(self, pair) -> None:
+        pair.src.write("left/a.txt", b"left")
+        pair.src.write("right/a.txt", b"right")
+        with pytest.raises(ValueError, match="same destination"):
+            _copy(pair.src, pair.dst, overwrite=False, keep_structure=False)
+        with pytest.raises(Exception):
+            pair.dst.read("a.txt")
+        with pytest.raises(ValueError, match="same destination"):
+            _copy(pair.src, pair.dst, overwrite=True, keep_structure=False)
+        with pytest.raises(Exception):
+            pair.dst.read("a.txt")
+
+
     def test_keep_structure(self, pair) -> None:
         pair.src.write("a.txt", b"alpha")
         pair.src.write("nested/b.txt", b"beta")

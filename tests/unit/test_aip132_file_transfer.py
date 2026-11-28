@@ -439,22 +439,32 @@ def test_flatten_versus_keep_structure(store):
     assert _read(dst_keep, "nested/b.txt") == b"beta"
 
 
-def test_flatten_collision_skips_later_key_when_overwrite_is_false(store):
+def test_flatten_collision_raises_before_copying(store):
     _backend, src, dst = store
     _mkdir(src, "left")
     _mkdir(src, "right")
     _write(src, "left/a.txt", b"left")
     _write(src, "right/a.txt", b"right")
-    copied = _execute(
-        PrefixFileTransferOperator,
-        src,
-        dst,
-        overwrite=False,
-        keep_structure=False,
-    )
-    assert _rels(dst, copied) == ["a.txt"]
-    # Source keys sort left/ before right/, so the first write wins.
-    assert _read(dst, "a.txt") == b"left"
+    with pytest.raises(ValueError, match="same destination"):
+        _execute(
+            PrefixFileTransferOperator,
+            src,
+            dst,
+            overwrite=False,
+            keep_structure=False,
+        )
+    with pytest.raises(Exception):
+        _read(dst, "a.txt")
+    with pytest.raises(ValueError, match="same destination"):
+        _execute(
+            PrefixFileTransferOperator,
+            src,
+            dst,
+            overwrite=True,
+            keep_structure=False,
+        )
+    with pytest.raises(Exception):
+        _read(dst, "a.txt")
 
 
 def test_single_file_matches_upstream(store):

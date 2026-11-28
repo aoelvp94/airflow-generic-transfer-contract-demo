@@ -545,6 +545,21 @@ def copy_single_file(src: ObjectStoragePath, dst: ObjectStoragePath, *, overwrit
     src.copy(dst)
 
 
+def _duplicate_destination_keys(planned: Sequence[PlannedCopy]) -> list[str]:
+    counts: dict[str, int] = {}
+    for item in planned:
+        counts[item.relative] = counts.get(item.relative, 0) + 1
+    return sorted(key for key, count in counts.items() if count > 1)
+
+
+def _raise_if_destination_collisions(planned: Sequence[PlannedCopy]) -> None:
+    clashes = _duplicate_destination_keys(planned)
+    if clashes:
+        raise ValueError(
+            "Multiple source keys map to the same destination key: " + ", ".join(clashes)
+        )
+
+
 def copy_prefix(
     src: ObjectStoragePath,
     dst: ObjectStoragePath,
@@ -561,7 +576,9 @@ def copy_prefix(
     ``src`` and ``dst`` are already resolved paths. Keys already present are
     left unchanged when ``overwrite`` is false, and those keys are omitted
     from the returned list. ``keep_structure`` false flattens each object to
-    its basename under ``dst``. When ``lineage`` is a list, each copied
+    its basename under ``dst``. If that mapping sends two source keys to the
+    same destination key, a ``ValueError`` is raised before any object is
+    copied. When ``lineage`` is a list, each copied
     ``(source, destination)`` pair is appended to it.
     """
     if chunk_size <= 0:
@@ -575,6 +592,7 @@ def copy_prefix(
         keep_structure=keep_structure,
         folder_markers=folder_markers,
     )
+    _raise_if_destination_collisions(planned)
     existing = None if overwrite else list_destination_names(dst)
     copied: list[tuple[str, ObjectStoragePath, ObjectStoragePath]] = []
     for item in planned:
