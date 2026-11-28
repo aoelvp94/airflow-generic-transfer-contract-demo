@@ -127,6 +127,27 @@ def test_operator_subclasses_file_transfer_and_base_operator():
     assert copy_files is copy_path
 
 
+def test_path_helpers_remain_importable_from_file_transfer():
+    from aip132 import file_transfer as ft
+    from aip132 import path_ops
+
+    for name in (
+        "child_path",
+        "classify_folder_markers",
+        "copy_files",
+        "copy_object",
+        "copy_path",
+        "copy_prefix",
+        "copy_single_file",
+        "list_entries",
+        "list_prefix_once",
+        "plan_prefix_copy",
+        "resolve_storage_path",
+        "stream_copy",
+    ):
+        assert getattr(ft, name) is getattr(path_ops, name)
+
+
 def test_classify_folder_markers_uses_the_listing_only():
     entries = [
         {"name": "pre/", "size": 0, "type": "directory"},

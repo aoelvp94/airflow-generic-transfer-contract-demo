@@ -36,10 +36,25 @@ from airflow.providers.common.io.operators.file_transfer import (
 from airflow.sdk import ObjectStoragePath
 
 from aip132.lineage import complete_facets, record_copied, start_facets
-from aip132.path_ops import DEFAULT_CHUNK_SIZE, FOLDER_MARKER_POLICIES, copy_path
+from aip132.path_ops import (
+    DEFAULT_CHUNK_SIZE,
+    FOLDER_MARKER_POLICIES,
+    child_path,
+    classify_folder_markers,
+    copy_files,
+    copy_object,
+    copy_path,
+    copy_prefix,
+    copy_single_file,
+    list_entries,
+    list_prefix_once,
+    plan_prefix_copy,
+    resolve_storage_path,
+    stream_copy,
+)
 
-# Older snippets import the helper from this module. The function lives in path_ops.
-copy_files = copy_path
+# Re-export path helpers so existing ``from aip132.file_transfer import ...``
+# call sites keep working. copy_files is an alias of copy_path.
 
 
 class FileTransferOperator(_FileTransferOperator):
