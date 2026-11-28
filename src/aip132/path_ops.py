@@ -518,14 +518,32 @@ def copy_object(
         raise
 
 
-def _is_prefix(src: ObjectStoragePath) -> bool:
-    """A trailing slash is a prefix. Otherwise one directory stat decides.
+def _source_uri_is_prefix(src: str | ObjectStoragePath) -> bool:
+    """True when the caller-supplied URI still ends with ``/``.
 
-    That stat is the source root only, not one stat per key. An object-store
-    prefix that is neither a directory nor written with a trailing slash is
-    treated as a single key, which is the upstream single-file path.
+    ``ObjectStoragePath`` drops a trailing slash, so this must run on the
+    original argument as well as on the resolved path.
     """
-    if src.key.endswith("/") or str(src).endswith("/"):
+    if isinstance(src, str):
+        return src.endswith("/")
+    key = getattr(src, "key", "") or ""
+    return str(src).endswith("/") or key.endswith("/")
+
+
+def _is_prefix(src: ObjectStoragePath, *, original: str | ObjectStoragePath | None = None) -> bool:
+    """A trailing slash on the URI the caller passed is a prefix.
+
+    ``ObjectStoragePath`` strips that slash, so ``original`` is checked
+    first. Otherwise one directory stat on the source root decides, not
+    one stat per key. An object-store key that is neither a directory nor
+    written with a trailing slash is a single file.
+
+    A prefix that does not exist is still a prefix: the listing is empty
+    and the copy returns an empty list rather than raising.
+    """
+    if original is not None and _source_uri_is_prefix(original):
+        return True
+    if _source_uri_is_prefix(src):
         return True
     try:
         return bool(src.is_dir())
@@ -637,9 +655,12 @@ def copy_path(
 
     A single file follows :func:`copy_single_file` and returns ``None``.
     A prefix follows :func:`copy_prefix` and returns the destination keys that
-    were copied, sorted. Strings are resolved with the connection ids.
-    ``memory://`` is attached on first use. When ``AIP132_ATTACH_EMULATORS``
-    is ``1``, the local object-store emulators are attached before resolve.
+    were copied, sorted. A source string that ends with ``/`` is always a
+    prefix, even when the path does not exist or ``ObjectStoragePath``
+    later drops the slash; a missing prefix returns an empty list. Strings
+    are resolved with the connection ids. ``memory://`` is attached on first
+    use. When ``AIP132_ATTACH_EMULATORS`` is ``1``, the local object-store
+    emulators are attached before resolve.
     """
     if os.environ.get("AIP132_ATTACH_EMULATORS") == "1":
         from aip132.emulator_attach import attach_emulators
@@ -651,7 +672,7 @@ def copy_path(
         raise ValueError(f"folder_markers must be 'skip' or 'copy', got {folder_markers!r}")
     src_path = resolve_storage_path(src, source_conn_id)
     dst_path = resolve_storage_path(dst, dest_conn_id)
-    if not _is_prefix(src_path):
+    if not _is_prefix(src_path, original=src):
         copy_single_file(src_path, dst_path, overwrite=overwrite)
         if lineage is not None:
             lineage.append((src_path, dst_path))

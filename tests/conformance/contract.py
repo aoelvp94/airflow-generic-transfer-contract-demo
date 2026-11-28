@@ -33,6 +33,19 @@ class StorageContract:
 
     __test__ = False
 
+    def test_trailing_slash_missing_prefix_returns_empty(self, pair) -> None:
+        """A source URI that ends with / is a prefix, even when it does not exist."""
+        missing_src = pair.src.uri.rstrip("/") + "-missing/"
+        result = copy_path(
+            missing_src,
+            pair.dst.uri,
+            source_conn_id=pair.src.conn_id,
+            dest_conn_id=pair.dst.conn_id,
+            overwrite=True,
+        )
+        assert result == []
+
+
     def test_single_file_matches_upstream(self, pair) -> None:
         pair.src.write("one.txt", b"payload")
         src_file = child_uri(pair.src, "one.txt")
