@@ -29,7 +29,10 @@ microsoft-azure providers. Write-up: [docs/AIP-132-demo.md](docs/AIP-132-demo.md
 `just aip132-test` runs the `file://` / `memory://` tests. `just aip132-demo`
 copies an S3 prefix to GCS when the emulators are up. `just aip132-e2e`
 runs that Dag through an Airflow 3.4 scheduler and checks the XCom and an
-OpenLineage console event, then tears the stack down.
+OpenLineage console event, then tears the stack down. Notes for moving a Dag
+off a mapped per-pair file operator (`S3ToGCSOperator`, `GCSToS3Operator`,
+`S3ToAzureBlobStorageOperator`, and the others in the table there) are in
+[skills/aip132-transfer-migration/SKILL.md](skills/aip132-transfer-migration/SKILL.md).
 
 ## Quick start
 
@@ -100,6 +103,7 @@ shims/                    Airflow file-contract shims (GCS, S3, Azure, 9 pairs)
 experiments/              S3ToAzureBlobStorageOperator replace=False repro
 examples/                 TaskFlow-shaped hook usage, and the AIP-132 S3-to-GCS Dag
 src/aip132/               path helpers, thin FileTransferOperator, OpenLineage (optional extra)
+skills/aip132-transfer-migration/   how to move a mapped per-pair file operator onto copy_path
 ```
 
 Public names are re-exported from the package root:
