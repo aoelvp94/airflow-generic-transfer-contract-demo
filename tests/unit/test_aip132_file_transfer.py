@@ -20,14 +20,15 @@ pytest.importorskip("airflow.providers.common.io.operators.file_transfer")
 from airflow.providers.common.io.operators.file_transfer import FileTransferOperator
 from airflow.sdk import BaseOperator, DAG, ObjectStoragePath
 
-from aip132.file_transfer import (
-    PrefixFileTransferOperator,
+from aip132.file_transfer import PrefixFileTransferOperator
+from aip132.path_ops import (
     _attach_memory,
     _copy_stream,
     child_path,
     classify_folder_markers,
     collapse_marker_aliases,
     copy_files,
+    copy_path,
     list_destination_names,
     list_prefix_once,
     resolve_storage_path,
@@ -118,8 +119,33 @@ def _seed(src: str) -> None:
 
 
 def test_operator_subclasses_file_transfer_and_base_operator():
+    from aip132.file_transfer import FileTransferOperator as DemoFileTransferOperator
+
+    assert PrefixFileTransferOperator is DemoFileTransferOperator
     assert issubclass(PrefixFileTransferOperator, FileTransferOperator)
     assert issubclass(PrefixFileTransferOperator, BaseOperator)
+    assert copy_files is copy_path
+
+
+def test_path_helpers_remain_importable_from_file_transfer():
+    from aip132 import file_transfer as ft
+    from aip132 import path_ops
+
+    for name in (
+        "child_path",
+        "classify_folder_markers",
+        "copy_files",
+        "copy_object",
+        "copy_path",
+        "copy_prefix",
+        "copy_single_file",
+        "list_entries",
+        "list_prefix_once",
+        "plan_prefix_copy",
+        "resolve_storage_path",
+        "stream_copy",
+    ):
+        assert getattr(ft, name) is getattr(path_ops, name)
 
 
 def test_classify_folder_markers_uses_the_listing_only():
@@ -145,8 +171,9 @@ def test_classify_folder_markers_uses_the_listing_only():
 def test_collapse_marker_aliases_keeps_one_object_key():
     """A withdirs directory and the zero-byte object are one marker.
 
-    The object name is the one that ends with ``/``. A directory row alone
-    (adlfs drops the slash) gets that slash back. A real file is unchanged.
+    The object name is the one that ends with ``/``. A lone directory row
+    is an implicit prefix, not an object, and is dropped. A file-typed
+    marker is unchanged.
     """
     both = collapse_marker_aliases(
         [
@@ -159,11 +186,42 @@ def test_collapse_marker_aliases_keeps_one_object_key():
     azure = collapse_marker_aliases(
         [{"name": "pre/nested", "size": 0, "type": "directory", "is_marker": True}]
     )
-    assert azure[0]["name"] == "pre/nested/"
+    assert azure == []
     empty = collapse_marker_aliases(
         [{"name": "pre/hold", "size": 0, "type": "file", "is_marker": True}]
     )
     assert empty[0]["name"] == "pre/hold"
+
+
+def test_collapse_marker_aliases_drops_implicit_directory_rows():
+    """find(withdirs=True) invents directory rows for prefixes that have no object.
+
+    Those rows are not marker objects. A real slashed object listed next to
+    its directory alias is still kept. A file-typed marker (adlfs often
+    strips the slash) is kept as a file.
+    """
+    implicit = collapse_marker_aliases(
+        [
+            {"name": "pre/a.txt", "size": 5, "type": "file", "is_marker": False},
+            {"name": "pre/sub", "size": 0, "type": "directory", "is_marker": True},
+            {"name": "pre/sub/b.txt", "size": 4, "type": "file", "is_marker": False},
+        ]
+    )
+    names = [row["name"] for row in implicit]
+    assert names == ["pre/a.txt", "pre/sub/b.txt"]
+
+    both = collapse_marker_aliases(
+        [
+            {"name": "pre/nested", "size": 0, "type": "directory", "is_marker": True},
+            {"name": "pre/nested/", "size": 0, "type": "file", "is_marker": True},
+        ]
+    )
+    assert [row["name"] for row in both] == ["pre/nested/"]
+
+    file_marker = collapse_marker_aliases(
+        [{"name": "pre/hold", "size": 0, "type": "file", "is_marker": True}]
+    )
+    assert file_marker[0]["name"] == "pre/hold"
 
 
 def test_list_prefix_once_does_not_stat_each_key():
@@ -254,7 +312,7 @@ def test_folder_markers_copy_keeps_real_marker_keys(store, monkeypatch):
     they stay out of the returned keys. A zero-byte key that the listing
     classified as a marker is copied as-is (no extra slash added).
     """
-    from aip132 import file_transfer as ft
+    from aip132 import path_ops
 
     _backend, src, dst = store
     dst_skip = dst[:-1] + "-skip/"
@@ -263,8 +321,8 @@ def test_folder_markers_copy_keeps_real_marker_keys(store, monkeypatch):
     _mkdir(src, "nested")
     _write(src, "a.txt", b"alpha")
     _write(src, "nested/b.txt", b"beta")
-    prefix = ft._fs_prefix(_root(src).fs, _root(src).path)
-    real_list = ft.list_prefix_once
+    prefix = path_ops._fs_prefix(_root(src).fs, _root(src).path)
+    real_list = path_ops.list_entries
 
     def _listing(path, _real=real_list, _prefix=prefix):
         rows = _real(path)
@@ -274,7 +332,7 @@ def test_folder_markers_copy_keeps_real_marker_keys(store, monkeypatch):
         )
         return rows
 
-    monkeypatch.setattr(ft, "list_prefix_once", _listing)
+    monkeypatch.setattr(path_ops, "list_entries", _listing)
     copied = _execute(
         PrefixFileTransferOperator,
         src,
@@ -402,22 +460,32 @@ def test_flatten_versus_keep_structure(store):
     assert _read(dst_keep, "nested/b.txt") == b"beta"
 
 
-def test_flatten_collision_skips_later_key_when_overwrite_is_false(store):
+def test_flatten_collision_raises_before_copying(store):
     _backend, src, dst = store
     _mkdir(src, "left")
     _mkdir(src, "right")
     _write(src, "left/a.txt", b"left")
     _write(src, "right/a.txt", b"right")
-    copied = _execute(
-        PrefixFileTransferOperator,
-        src,
-        dst,
-        overwrite=False,
-        keep_structure=False,
-    )
-    assert _rels(dst, copied) == ["a.txt"]
-    # Source keys sort left/ before right/, so the first write wins.
-    assert _read(dst, "a.txt") == b"left"
+    with pytest.raises(ValueError, match="same destination"):
+        _execute(
+            PrefixFileTransferOperator,
+            src,
+            dst,
+            overwrite=False,
+            keep_structure=False,
+        )
+    with pytest.raises(Exception):
+        _read(dst, "a.txt")
+    with pytest.raises(ValueError, match="same destination"):
+        _execute(
+            PrefixFileTransferOperator,
+            src,
+            dst,
+            overwrite=True,
+            keep_structure=False,
+        )
+    with pytest.raises(Exception):
+        _read(dst, "a.txt")
 
 
 def test_single_file_matches_upstream(store):

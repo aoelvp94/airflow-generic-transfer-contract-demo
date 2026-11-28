@@ -1,15 +1,17 @@
 """Demo Dag: copy an S3 prefix to GCS with folder markers skipped.
 
-The task is ``PrefixFileTransferOperator``. A ``@task`` can call the same
-helper without the operator:
+The task is ``PrefixFileTransferOperator``, an alias of the thin
+``FileTransferOperator`` in this package. A ``@task`` calls ``copy_path``
+and does not import the operator:
 
 .. code-block:: python
 
     from airflow.sdk import task
+    from aip132.path_ops import copy_path
 
-    from examples.aip132_s3_prefix_to_gcs import copy_s3_prefix_to_gcs
-
-    copy_s3_prefix_to_gcs = task(copy_s3_prefix_to_gcs)
+    @task
+    def copy_sales(src: str, dst: str) -> list[str] | None:
+        return copy_path(src, dst, source_conn_id="aws", dest_conn_id="gcp")
 
 Run this file to execute the copy against the local emulators (``just up``,
 then ``just aip132-demo``). Importing the module only defines the Dag.
@@ -33,7 +35,8 @@ if __name__ == "__main__":
 
 from airflow.sdk import DAG
 
-from aip132.file_transfer import PrefixFileTransferOperator, copy_files
+from aip132.file_transfer import PrefixFileTransferOperator
+from aip132.path_ops import copy_path
 
 PREFIX = "aip132-demo/sales"
 SRC_URL = f"s3://src-bucket/{PREFIX}/"
@@ -48,7 +51,7 @@ def copy_s3_prefix_to_gcs(
     dest_conn_id: str | None = "aip132_gcs",
 ) -> list[str] | None:
     """Body of a ``@task``. Same arguments and behaviour as the operator below."""
-    return copy_files(
+    return copy_path(
         src,
         dst,
         source_conn_id=source_conn_id,

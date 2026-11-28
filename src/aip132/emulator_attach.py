@@ -6,7 +6,7 @@ connection id. The emulators need path-style S3 and gcsfs's HTTP client
 those, and gcsfs 2026.10 defaults to a gRPC client that fake-gcs-server does
 not answer.
 
-``copy_files`` calls :func:`attach_emulators` when ``AIP132_ATTACH_EMULATORS``
+``copy_path`` calls :func:`attach_emulators` when ``AIP132_ATTACH_EMULATORS``
 is ``1``, before it resolves a path. Endpoints default to the hosts in
 ``emulators/emulators.env`` (``S3_ENDPOINT``, ``GCS_ENDPOINT``,
 ``STORAGE_EMULATOR_HOST``, ``AZURE_CONNECTION_STRING``).

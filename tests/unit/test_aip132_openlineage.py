@@ -21,7 +21,8 @@ pytest.importorskip("airflow.providers.openlineage.extractors")
 from airflow.providers.common.io.operators.file_transfer import FileTransferOperator
 from airflow.sdk import DAG, ObjectStoragePath
 
-from aip132.file_transfer import PrefixFileTransferOperator, child_path, resolve_storage_path
+from aip132.file_transfer import PrefixFileTransferOperator
+from aip132.path_ops import child_path, resolve_storage_path
 from aip132.lineage import identity_uri, openlineage_identity
 
 pytestmark = pytest.mark.aip132
@@ -143,7 +144,7 @@ def test_complete_names_each_copied_file_and_skips_directories(tmp_path: Path):
 
 
 def test_complete_includes_a_copied_marker_key(tmp_path: Path, monkeypatch):
-    from aip132 import file_transfer as ft
+    from aip132 import path_ops
 
     src = tmp_path / "src"
     dst = tmp_path / "dst"
@@ -153,15 +154,15 @@ def test_complete_includes_a_copied_marker_key(tmp_path: Path, monkeypatch):
     src_uri = src.resolve().as_uri() + "/"
     dst_uri = dst.resolve().as_uri() + "/"
     root = resolve_storage_path(src_uri, None)
-    prefix = ft._fs_prefix(root.fs, root.path)
-    real_list = ft.list_prefix_once
+    prefix = path_ops._fs_prefix(root.fs, root.path)
+    real_list = path_ops.list_entries
 
     def _listing(path, _real=real_list, _prefix=prefix):
         rows = _real(path)
         rows.append({"name": f"{_prefix}/hold", "size": 0, "type": "file", "is_marker": True})
         return rows
 
-    monkeypatch.setattr(ft, "list_prefix_once", _listing)
+    monkeypatch.setattr(path_ops, "list_entries", _listing)
     op = _operator(src_uri, dst_uri, overwrite=True, folder_markers="copy")
     copied = op.execute({})
     assert copied is not None
@@ -191,3 +192,106 @@ def test_complete_reconstructs_pairs_from_xcom_without_execute(tmp_path: Path):
     assert _ids(fresh.get_openlineage_facets_on_complete(_XCom(None))) == _ids(
         fresh.get_openlineage_facets_on_start()
     )
+
+def test_complete_pairs_inputs_to_outputs_when_flattened(tmp_path: Path):
+    """Returned keys sort by destination; lineage must not zip that with source order."""
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    (src / "z").mkdir(parents=True)
+    (src / "y").mkdir(parents=True)
+    dst.mkdir()
+    (src / "z" / "a.csv").write_bytes(b"a")
+    (src / "b.csv").write_bytes(b"b")
+    (src / "y" / "c.csv").write_bytes(b"c")
+    src_uri = src.resolve().as_uri() + "/"
+    dst_uri = dst.resolve().as_uri() + "/"
+    op = _operator(src_uri, dst_uri, overwrite=True, keep_structure=False)
+    copied = op.execute({})
+    assert copied is not None
+    assert [Path(name).name for _ns, name in _ids(op.get_openlineage_facets_on_complete(None))[1]] == [
+        "a.csv",
+        "b.csv",
+        "c.csv",
+    ]
+    inputs, outputs = _ids(op.get_openlineage_facets_on_complete(None))
+    paired = {Path(out).name: Path(inp).as_posix() for (_ns, inp), (__ns, out) in zip(inputs, outputs)}
+    assert paired["a.csv"].endswith("z/a.csv")
+    assert paired["b.csv"].endswith("b.csv")
+    assert paired["c.csv"].endswith("y/c.csv")
+    assert [name for _ns, name in outputs] == copied
+
+
+def test_complete_pairs_marker_keys_with_keep_structure(tmp_path: Path, monkeypatch):
+    """A trailing slash on a marker key must stay attached to that same input."""
+    from aip132 import path_ops
+
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    src.mkdir()
+    dst.mkdir()
+    (src / "b.txt").write_bytes(b"beta")
+    (src / "a.txt").write_bytes(b"alpha")
+    src_uri = src.resolve().as_uri() + "/"
+    dst_uri = dst.resolve().as_uri() + "/"
+    root = resolve_storage_path(src_uri, None)
+    prefix = path_ops._fs_prefix(root.fs, root.path)
+    real_list = path_ops.list_entries
+
+    def _listing(path, _real=real_list, _prefix=prefix):
+        rows = _real(path)
+        rows.append({"name": f"{_prefix}/hold/", "size": 0, "type": "file", "is_marker": True})
+        return rows
+
+    monkeypatch.setattr(path_ops, "list_entries", _listing)
+    op = _operator(src_uri, dst_uri, overwrite=True, keep_structure=True, folder_markers="copy")
+    copied = op.execute({})
+    assert copied is not None
+    inputs, outputs = _ids(op.get_openlineage_facets_on_complete(None))
+    assert [name for _ns, name in outputs] == copied
+    paired = list(zip(inputs, outputs))
+    marker = [((ins, inn), (ons, onn)) for (ins, inn), (ons, onn) in paired if onn.endswith("hold/")]
+    assert marker, copied
+    assert marker[0][0][1].rstrip("/").endswith("hold")
+
+def test_in_process_lineage_cache_is_scoped_by_run_and_map_index(tmp_path: Path):
+    from aip132.lineage import complete_facets, record_copied
+    from airflow.sdk import ObjectStoragePath
+
+    class _Op:
+        def __init__(self) -> None:
+            self.dag_id = "dag"
+            self.task_id = "copy"
+            self.src = (tmp_path / "src").resolve().as_uri() + "/"
+            self.dst = (tmp_path / "dst").resolve().as_uri() + "/"
+            self.source_conn_id = None
+            self.dest_conn_id = None
+            self.keep_structure = True
+
+    src_a = ObjectStoragePath((tmp_path / "src" / "a.txt").resolve().as_uri())
+    dst_a = ObjectStoragePath((tmp_path / "dst" / "a.txt").resolve().as_uri())
+    src_b = ObjectStoragePath((tmp_path / "src" / "b.txt").resolve().as_uri())
+    dst_b = ObjectStoragePath((tmp_path / "dst" / "b.txt").resolve().as_uri())
+    first, second, reader = _Op(), _Op(), _Op()
+
+    record_copied(
+        first,
+        [(src_a, dst_a)],
+        [dst_a.key],
+        context={"run_id": "run1", "ti": type("TI", (), {"map_index": 0, "run_id": "run1"})()},
+    )
+    record_copied(
+        second,
+        [(src_b, dst_b)],
+        [dst_b.key],
+        context={"run_id": "run1", "ti": type("TI", (), {"map_index": 1, "run_id": "run1"})()},
+    )
+
+    # Reader did not execute; it must use the cache, not first._ol_ran.
+    mapped0 = type("TI", (), {"map_index": 0, "run_id": "run1"})()
+    mapped1 = type("TI", (), {"map_index": 1, "run_id": "run1"})()
+    _, outputs0 = _ids(complete_facets(reader, mapped0))
+    _, outputs1 = _ids(complete_facets(reader, mapped1))
+    assert any(name.endswith("a.txt") for _ns, name in outputs0)
+    assert not any(name.endswith("b.txt") for _ns, name in outputs0)
+    assert any(name.endswith("b.txt") for _ns, name in outputs1)
+    assert not any(name.endswith("a.txt") for _ns, name in outputs1)

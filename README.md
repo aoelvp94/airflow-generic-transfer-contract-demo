@@ -17,9 +17,12 @@ API and local object-store emulators. Apache-2.0. English throughout.
 
 [AIP-132](https://cwiki.apache.org/confluence/spaces/AIRFLOW/pages/467436039/AIP-132+One+transfer+operator+on+hook+contracts)
 phase 1 extends `FileTransferOperator` so one operator can copy a prefix.
-`PrefixFileTransferOperator` (`src/aip132/file_transfer.py`) is that operator
-on Airflow 3.4: prefix and glob, skip or overwrite, keep or flatten, folder
-markers from a single listing, copied keys returned, and
+The copy lives in `src/aip132/path_ops.py` (`copy_path` and the listing,
+marker, and plan helpers). `FileTransferOperator` in
+`src/aip132/file_transfer.py` is a thin facilitator on Airflow 3.4: it
+forwards arguments and emits OpenLineage. `PrefixFileTransferOperator` is
+that same class. Behaviour covered: prefix and glob, skip or overwrite, keep
+or flatten, folder markers from a single listing, copied keys returned, and
 `ObjectStoragePath.copy` when both ends share a store. The optional `aip132`
 extra pins Airflow 3.4.0 and the common.io, amazon, google, and
 microsoft-azure providers. Write-up: [docs/AIP-132-demo.md](docs/AIP-132-demo.md).
@@ -96,7 +99,7 @@ emulators/                compose file, env, lifecycle script, fake HTTP API
 shims/                    Airflow file-contract shims (GCS, S3, Azure, 9 pairs)
 experiments/              S3ToAzureBlobStorageOperator replace=False repro
 examples/                 TaskFlow-shaped hook usage, and the AIP-132 S3-to-GCS Dag
-src/aip132/               PrefixFileTransferOperator (Airflow 3, optional extra)
+src/aip132/               path helpers, thin FileTransferOperator, OpenLineage (optional extra)
 ```
 
 Public names are re-exported from the package root:
@@ -230,8 +233,8 @@ not the row count.
 
 - The operators under `src/generic_transfer/` are plain Python classes with
   the same param surface a real operator would expose. They are not wired
-  into the Airflow scheduler. `PrefixFileTransferOperator` in `src/aip132/`
-  subclasses `FileTransferOperator`; see
+  into the Airflow scheduler. `FileTransferOperator` in `src/aip132/` forwards
+  to `path_ops`; `PrefixFileTransferOperator` is that class. See
   [docs/AIP-132-demo.md](docs/AIP-132-demo.md).
 - Emulators on one machine are not a cloud. The scale host is a single
   8-core Xeon with 15.6 GiB RAM. Times without injected latency are client

@@ -243,8 +243,8 @@ experiment-all-pairs:
 
 
 # AIP-132 phase 1. Separate venv so the default demo env stays free of Airflow.
-# Unit tests only (file:// and memory://). Integration is documented in
-# docs/AIP-132-demo.md and needs `just up`.
+# Unit tests and the file:// / memory:// conformance suite. Integration is
+# documented in docs/AIP-132-demo.md and needs `just up`.
 aip132-test:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -259,7 +259,7 @@ aip132-test:
     export AIRFLOW_HOME="${AIRFLOW_HOME:-$PWD/.airflow-aip132}"
     export AIRFLOW__CORE__LOAD_EXAMPLES=False
     export AIRFLOW__CORE__UNIT_TEST_MODE=True
-    "$PY" -m pytest -v -m 'not integration and not e2e' tests/unit/test_aip132_file_transfer.py tests/unit/test_aip132_openlineage.py
+    "$PY" -m pytest -v -m 'not integration and not e2e' tests/unit/test_aip132_file_transfer.py tests/unit/test_aip132_openlineage.py tests/conformance/test_storage_contract.py
 
 aip132-demo:
     #!/usr/bin/env bash
