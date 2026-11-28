@@ -170,9 +170,14 @@ def collapse_marker_aliases(entries: Sequence[Mapping[str, Any]]) -> list[dict[s
     (``nested/``, type ``file``). Those are one key. The object name, the
     one that ends with ``/``, is kept.
 
-    adlfs lists that object only as the directory, with the slash removed.
-    The slash is put back so the copied key is the object key. A non-marker
-    is never rewritten.
+    A lone ``type=directory`` row with no trailing slash and no companion
+    slashed object is an implicit prefix invented by ``withdirs=True``,
+    not a marker object, and is dropped. Rewriting it to ``nested/`` would
+    materialize a key the source never had.
+
+    A real slashed blob that a backend lists as a file (adlfs often strips
+    the trailing slash and keeps ``type=file``) is kept as that file row.
+    A non-marker is never rewritten.
     """
     kept: list[dict[str, Any]] = []
     markers: dict[str, list[dict[str, Any]]] = {}
@@ -195,8 +200,10 @@ def collapse_marker_aliases(entries: Sequence[Mapping[str, Any]]) -> list[dict[s
             continue
         row = rows[0]
         name = str(row.get("name", ""))
-        if name and str(row.get("type") or "") in _DIRECTORY_TYPES and not name.endswith("/"):
-            row["name"] = name + "/"
+        typ = str(row.get("type") or "")
+        if typ in _DIRECTORY_TYPES and not name.endswith("/"):
+            # Implicit directory from find(withdirs=True). Not an object key.
+            continue
         kept.append(row)
     return kept
 

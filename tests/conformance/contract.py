@@ -142,6 +142,19 @@ class StorageContract:
             assert marker_rels == []
             assert not any(rel.endswith("/") for rel in rels)
 
+    def test_folder_markers_copy_skips_implicit_directories(self, pair) -> None:
+        """folder_markers=copy must not materialize implicit prefixes as objects."""
+        pair.src.write("a.txt", b"alpha")
+        pair.src.write("sub/b.txt", b"beta")
+        copied = _copy(pair.src, pair.dst, overwrite=True, folder_markers="copy")
+        rels = relatives(pair.dst, copied)
+        assert "a.txt" in rels
+        assert "sub/b.txt" in rels
+        assert "sub" not in rels
+        assert "sub/" not in rels
+        assert not any(rel.rstrip("/") == "sub" for rel in rels)
+
+
     def test_returned_keys_match_destination_listing(self, pair) -> None:
         pair.src.write("a.txt", b"alpha")
         pair.src.write("nested/b.txt", b"beta")

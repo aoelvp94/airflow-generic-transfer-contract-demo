@@ -150,8 +150,9 @@ def test_classify_folder_markers_uses_the_listing_only():
 def test_collapse_marker_aliases_keeps_one_object_key():
     """A withdirs directory and the zero-byte object are one marker.
 
-    The object name is the one that ends with ``/``. A directory row alone
-    (adlfs drops the slash) gets that slash back. A real file is unchanged.
+    The object name is the one that ends with ``/``. A lone directory row
+    is an implicit prefix, not an object, and is dropped. A file-typed
+    marker is unchanged.
     """
     both = collapse_marker_aliases(
         [
@@ -164,11 +165,42 @@ def test_collapse_marker_aliases_keeps_one_object_key():
     azure = collapse_marker_aliases(
         [{"name": "pre/nested", "size": 0, "type": "directory", "is_marker": True}]
     )
-    assert azure[0]["name"] == "pre/nested/"
+    assert azure == []
     empty = collapse_marker_aliases(
         [{"name": "pre/hold", "size": 0, "type": "file", "is_marker": True}]
     )
     assert empty[0]["name"] == "pre/hold"
+
+
+def test_collapse_marker_aliases_drops_implicit_directory_rows():
+    """find(withdirs=True) invents directory rows for prefixes that have no object.
+
+    Those rows are not marker objects. A real slashed object listed next to
+    its directory alias is still kept. A file-typed marker (adlfs often
+    strips the slash) is kept as a file.
+    """
+    implicit = collapse_marker_aliases(
+        [
+            {"name": "pre/a.txt", "size": 5, "type": "file", "is_marker": False},
+            {"name": "pre/sub", "size": 0, "type": "directory", "is_marker": True},
+            {"name": "pre/sub/b.txt", "size": 4, "type": "file", "is_marker": False},
+        ]
+    )
+    names = [row["name"] for row in implicit]
+    assert names == ["pre/a.txt", "pre/sub/b.txt"]
+
+    both = collapse_marker_aliases(
+        [
+            {"name": "pre/nested", "size": 0, "type": "directory", "is_marker": True},
+            {"name": "pre/nested/", "size": 0, "type": "file", "is_marker": True},
+        ]
+    )
+    assert [row["name"] for row in both] == ["pre/nested/"]
+
+    file_marker = collapse_marker_aliases(
+        [{"name": "pre/hold", "size": 0, "type": "file", "is_marker": True}]
+    )
+    assert file_marker[0]["name"] == "pre/hold"
 
 
 def test_list_prefix_once_does_not_stat_each_key():
