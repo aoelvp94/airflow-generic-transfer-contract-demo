@@ -379,16 +379,82 @@ def _copy_stream(reader: Any, writer: Any, chunk_size: int) -> None:
     shutil.copyfileobj(reader, writer, length=chunk_size)
 
 
+def _remove_partial(dst: ObjectStoragePath, *, trailing_slash: bool = False) -> None:
+    """Best-effort delete of a destination left behind by a failed write."""
+    targets: list[str] = []
+    raw = str(dst.path)
+    if trailing_slash and raw and not raw.endswith("/"):
+        targets.append(raw.rstrip("/") + "/")
+    if raw:
+        targets.append(raw)
+    key = getattr(dst, "key", None)
+    if key:
+        key_text = str(key)
+        if trailing_slash and not key_text.endswith("/"):
+            targets.append(key_text.rstrip("/") + "/")
+        targets.append(key_text)
+    seen: set[str] = set()
+    unique: list[str] = []
+    for target in targets:
+        if target not in seen:
+            seen.add(target)
+            unique.append(target)
+    fs = dst.fs
+    for target in unique:
+        for name in ("rm_file", "rm"):
+            remover = getattr(fs, name, None)
+            if not callable(remover):
+                continue
+            try:
+                remover(target)
+                break
+            except FileNotFoundError:
+                break
+            except TypeError:
+                try:
+                    remover(target, recursive=False)
+                    break
+                except Exception:
+                    continue
+            except Exception:
+                continue
+    unlink = getattr(dst, "unlink", None)
+    if callable(unlink):
+        try:
+            unlink(missing_ok=True)
+        except TypeError:
+            try:
+                unlink()
+            except Exception:
+                pass
+        except Exception:
+            pass
+    invalidate = getattr(fs, "invalidate_cache", None)
+    if callable(invalidate):
+        try:
+            invalidate()
+        except Exception:
+            pass
+
+
 def stream_copy(
     src: ObjectStoragePath,
     dst: ObjectStoragePath,
     *,
     chunk_size: int = DEFAULT_CHUNK_SIZE,
 ) -> None:
-    """Stream ``src`` to ``dst`` in fixed-size chunks."""
+    """Stream ``src`` to ``dst`` in fixed-size chunks.
+
+    A failed write deletes the partial destination so a later retry with
+    ``overwrite=False`` does not treat the leftover as a complete object.
+    """
     _prepare_file_parent(dst)
-    with src.open("rb") as reader, dst.open("wb") as writer:
-        _copy_stream(reader, writer, chunk_size)
+    try:
+        with src.open("rb") as reader, dst.open("wb") as writer:
+            _copy_stream(reader, writer, chunk_size)
+    except Exception:
+        _remove_partial(dst)
+        raise
 
 
 def _write_empty_marker(dst: ObjectStoragePath, *, trailing_slash: bool) -> None:
@@ -428,13 +494,21 @@ def copy_object(
     ``ObjectStoragePath`` removed from a marker key.
     """
     if marker:
-        _write_empty_marker(dst, trailing_slash=trailing_slash)
+        try:
+            _write_empty_marker(dst, trailing_slash=trailing_slash)
+        except Exception:
+            _remove_partial(dst, trailing_slash=trailing_slash)
+            raise
         return
-    if same_store(src, dst):
-        _prepare_file_parent(dst)
-        src.copy(dst)
-        return
-    stream_copy(src, dst, chunk_size=chunk_size)
+    try:
+        if same_store(src, dst):
+            _prepare_file_parent(dst)
+            src.copy(dst)
+            return
+        stream_copy(src, dst, chunk_size=chunk_size)
+    except Exception:
+        _remove_partial(dst, trailing_slash=trailing_slash)
+        raise
 
 
 def _is_prefix(src: ObjectStoragePath) -> bool:

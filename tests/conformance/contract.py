@@ -16,6 +16,8 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
+import pytest
+
 from airflow.providers.common.io.operators.file_transfer import (
     FileTransferOperator as UpstreamFileTransferOperator,
 )
@@ -175,6 +177,37 @@ class StorageContract:
         assert relatives(same_pair.dst, copied) == ["a.txt", "b.txt"]
         assert len(calls) == 2
         assert same_pair.dst.read("a.txt") == b"alpha"
+
+    def test_interrupted_copy_retry_writes_full_object(self, pair, monkeypatch) -> None:
+        """A mid-copy failure must not leave a truncated object that retry skips."""
+        from airflow.sdk import ObjectStoragePath
+
+        from aip132 import path_ops
+
+        payload = b"abcdefghijklmnopqrstuvwxyz" * 400
+        pair.src.write("big.bin", payload)
+
+        def fail_copyfileobj(reader, writer, length=None):
+            chunk = reader.read(length or 1024)
+            if chunk:
+                writer.write(chunk)
+            raise RuntimeError("simulated mid-copy failure")
+
+        def fail_copy(self, dest, recursive=False, **kwargs):
+            with self.open("rb") as source, dest.open("wb") as target:
+                target.write(source.read(32))
+            raise RuntimeError("simulated mid-copy failure")
+
+        monkeypatch.setattr(path_ops.shutil, "copyfileobj", fail_copyfileobj)
+        monkeypatch.setattr(ObjectStoragePath, "copy", fail_copy)
+        with pytest.raises(RuntimeError, match="simulated mid-copy failure"):
+            _copy(pair.src, pair.dst, overwrite=True, chunk_size=32)
+        monkeypatch.undo()
+
+        copied = _copy(pair.src, pair.dst, overwrite=False, chunk_size=32)
+        assert "big.bin" in relatives(pair.dst, copied)
+        assert pair.dst.read("big.bin") == payload
+
 
     def test_cross_store_streams(self, cross_pair, monkeypatch) -> None:
         cross_pair.src.write("a.txt", b"abcdefghijklmnopqrstuvwxyz")
