@@ -261,6 +261,46 @@ aip132-test:
     export AIRFLOW__CORE__UNIT_TEST_MODE=True
     "$PY" -m pytest -v -m 'not integration and not e2e' tests/unit/test_aip132_file_transfer.py tests/unit/test_aip132_openlineage.py tests/conformance/test_storage_contract.py
 
+# mypy on the @final fixture. The rejected file must fail; the alias file must pass.
+# Installs mypy into .venv-aip132. Does not change the Airflow constraint install.
+aip132-final-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export PATH="${HOME}/.local/bin:${PATH}"
+    PY=".venv-aip132/bin/python"
+    if [[ ! -x "$PY" ]] || ! "$PY" -c 'import airflow, aip132.file_transfer, airflow.providers.openlineage' >/dev/null 2>&1; then
+        command -v uv >/dev/null 2>&1 || { echo "uv is required: https://docs.astral.sh/uv/"; exit 1; }
+        uv venv .venv-aip132 --python 3.12
+        uv pip install --python .venv-aip132/bin/python -e '.[dev,aip132]' \
+            --constraint 'https://raw.githubusercontent.com/apache/airflow/constraints-3.4.0/constraints-3.12.txt'
+    fi
+    if ! "$PY" -c 'import mypy' >/dev/null 2>&1; then
+        uv pip install --python "$PY" 'mypy>=1.13'
+    fi
+    export AIRFLOW_HOME="${AIRFLOW_HOME:-$PWD/.airflow-aip132}"
+    export AIRFLOW__CORE__LOAD_EXAMPLES=False
+    export AIRFLOW__CORE__UNIT_TEST_MODE=True
+    "$PY" -m pytest -v tests/unit/test_aip132_final.py
+
+# AST scan for a new *To*Operator class, plus the guard's unit tests.
+# This repository has no pre-commit config; the script is the hook entry.
+pair-operator-guard:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export PATH="${HOME}/.local/bin:${PATH}"
+    PY=".venv-aip132/bin/python"
+    if [[ ! -x "$PY" ]] || ! "$PY" -c 'import airflow, aip132.file_transfer' >/dev/null 2>&1; then
+        command -v uv >/dev/null 2>&1 || { echo "uv is required: https://docs.astral.sh/uv/"; exit 1; }
+        uv venv .venv-aip132 --python 3.12
+        uv pip install --python .venv-aip132/bin/python -e '.[dev,aip132]' \
+            --constraint 'https://raw.githubusercontent.com/apache/airflow/constraints-3.4.0/constraints-3.12.txt'
+    fi
+    export AIRFLOW_HOME="${AIRFLOW_HOME:-$PWD/.airflow-aip132}"
+    export AIRFLOW__CORE__LOAD_EXAMPLES=False
+    export AIRFLOW__CORE__UNIT_TEST_MODE=True
+    "$PY" -m pytest -v tests/unit/test_pair_operator_guard.py
+    "$PY" -m tools.pair_operator_guard src
+
 aip132-demo:
     #!/usr/bin/env bash
     set -euo pipefail

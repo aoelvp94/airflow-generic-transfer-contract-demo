@@ -11,6 +11,13 @@ that name. Upstream, ``FileTransferOperator`` grows these arguments and the
 extra subclass goes away. This module subclasses the installed operator only
 because that class is not edited in site-packages.
 
+``@final`` is on the class, not on its methods. A per-backend subclass such
+as ``S3ToGCSOperator`` is a type error, including one that only overrides
+``execute`` or ``__init__``. Method-level ``@final`` would still allow an
+empty subclass. The alias below is an assignment, so it is not a subclass.
+``typing.final`` sets ``__final__`` and returns the class; ``execute`` is
+unchanged.
+
 .. code-block:: python
 
     from aip132.file_transfer import FileTransferOperator
@@ -28,7 +35,7 @@ because that class is not edited in site-packages.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, final
 
 from airflow.providers.common.io.operators.file_transfer import (
     FileTransferOperator as _FileTransferOperator,
@@ -57,6 +64,7 @@ from aip132.path_ops import (
 # call sites keep working. copy_files is an alias of copy_path.
 
 
+@final
 class FileTransferOperator(_FileTransferOperator):
     """Copy one object or a prefix. The copy itself is :func:`aip132.path_ops.copy_path`.
 

@@ -30,6 +30,10 @@ microsoft-azure providers. Write-up: [docs/AIP-132-demo.md](docs/AIP-132-demo.md
 copies an S3 prefix to GCS when the emulators are up. `just aip132-e2e`
 runs that Dag through an Airflow 3.4 scheduler and checks the XCom and an
 OpenLineage console event, then tears the stack down.
+`FileTransferOperator` is `@typing.final` (the prefix name is an alias, not a
+subclass). `just aip132-final-check` runs mypy on a fixture that must fail.
+`just pair-operator-guard` fails if a new `*To*Operator` class is defined
+outside an allowlist. Notes: [docs/aip132-final-and-pair-guard.md](docs/aip132-final-and-pair-guard.md).
 
 ## Quick start
 
@@ -100,6 +104,7 @@ shims/                    Airflow file-contract shims (GCS, S3, Azure, 9 pairs)
 experiments/              S3ToAzureBlobStorageOperator replace=False repro
 examples/                 TaskFlow-shaped hook usage, and the AIP-132 S3-to-GCS Dag
 src/aip132/               path helpers, thin FileTransferOperator, OpenLineage (optional extra)
+tools/pair_operator_guard/  AST guard: no new *To*Operator class outside the allowlist
 ```
 
 Public names are re-exported from the package root:
